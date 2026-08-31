@@ -205,7 +205,7 @@ ${ranked.length === 0 ? `<div class="notice">No providers listed here yet.</div>
 
   return layout(`${title} | ClearPath ABA`, body, {
     desc: `${ranked.length} ABA therapy providers in ${c.city}, TX${payer ? ` accepting ${PAYERS[payer]}` : ""} — license-verified, with confirmed insurance and waitlist status.`,
-    canonical: `/tx/${c.city_slug}/${payer ? `accepts-${payer}.html` : ""}`, depth: 2,
+    canonical: `/tx/${c.city_slug}${payer ? `/accepts-${payer}.html` : ""}`, depth: 2,
   });
 }
 
@@ -556,7 +556,7 @@ const urls = ["/", "/lookup.html", "/for-clinics.html", "/methodology.html", "/t
 for (const c of cities) {
   mkdirSync(new URL(`tx/${c.city_slug}/`, OUT), { recursive: true });
   w(`tx/${c.city_slug}/index.html`, cityPage(c)); count++;
-  urls.push(`/tx/${c.city_slug}/`);
+  urls.push(`/tx/${c.city_slug}`);
   if (c.n >= MIN_SITES_FOR_PAYER_PAGE) {
     for (const p of Object.keys(PAYERS)) {
       w(`tx/${c.city_slug}/accepts-${p}.html`, cityPage(c, p)); count++;
@@ -574,6 +574,22 @@ w("sitemap.xml", `<?xml version="1.0" encoding="UTF-8"?>
 ${urls.map((u) => `<url><loc>${base}${u}</loc><lastmod>${today}</lastmod></url>`).join("\n")}
 </urlset>`);
 w("robots.txt", `User-agent: *\nAllow: /\n${base ? `Sitemap: ${base}/sitemap.xml\n` : ""}`);
+
+// docs/ IS the Vercel deploy root (Root Directory = docs), so this config lives here.
+// Keeping it inside the generated output means the deployed tree is always self-describing.
+w("vercel.json", JSON.stringify({
+  $schema: "https://openapi.vercel.sh/vercel.json",
+  cleanUrls: false,
+  trailingSlash: false,
+  headers: [
+    { source: "/(.*)", headers: [
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+    ]},
+    { source: "/style.css", headers: [{ key: "Cache-Control", value: "public, max-age=3600" }] },
+    { source: "/licenses.json", headers: [{ key: "Cache-Control", value: "public, max-age=86400" }] },
+  ],
+}, null, 2));
 
 console.log(`Generated ${count} pages in docs/`);
 console.log(`  ${orgs.length} providers · ${cities.length} cities · ${urls.length} sitemap URLs`);
