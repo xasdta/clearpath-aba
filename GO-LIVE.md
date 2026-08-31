@@ -3,19 +3,20 @@
 The site is built, pushed, and deployed. These are the steps only you can do — each one
 unblocks a feature that is already coded and waiting for its value.
 
-## 1. Claim the deployment (time-sensitive — 60 minutes)
+## 1. Connect the repo to the live project  ✅ deployment claimed
 
-The live site is an **anonymous Vercel deployment that expires unless claimed**:
+Live and permanent: **https://temporary-racing-beryl-kspa5t2.vercel.app**
+(project `temporary-racing-beryl-kspa5t2` in `xasdta's projects`).
 
-- Live now: https://temporary-racing-beryl-kspa5t2.vercel.app
-- Claim it: https://vercel.com/claim-deployment?code=2cbf5faf-c813-4764-a23f-5a704689b53b
+It was created by a CLI deploy, so it is **not linked to GitHub yet** — pushes will not
+redeploy, and `scripts/refresh.sh` assumes they do. Fix once, in the Vercel dashboard:
 
-If it expires, nothing is lost — redeploy with `cd docs && npx vercel deploy --temporary`.
+1. Project → **Settings → Git → Connect Git Repository** → `xasdta/clearpath-aba`
+2. Set **Root Directory = `docs`** (Framework Preset: Other; no build command)
+3. Optional but worth it: **Settings → General → Project Name** → `clearpath-aba`
+   (the project name is the public URL until a domain is attached)
 
-**Better, permanent path:** in the Vercel dashboard → Add New → Project → import
-`xasdta/clearpath-aba`, and set **Root Directory = `docs`** (Framework Preset: Other, no build
-command). Every `git push` then redeploys automatically, which is what `scripts/refresh.sh`
-assumes.
+Verify by pushing any commit and watching a deployment appear.
 
 ## 2. Domain
 
