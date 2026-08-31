@@ -9,6 +9,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
+import { execSync } from "node:child_process";
 
 const root = new URL("../", import.meta.url);
 const OUT = new URL("docs/", root);
@@ -18,6 +19,10 @@ const claims = JSON.parse(readFileSync(new URL("data/claims.json", root))).provi
 const db = new DatabaseSync(new URL("data/clearpath.db", root).pathname);
 
 const today = new Date().toISOString().slice(0, 10);
+// Build provenance: lets anyone (including us) confirm which commit a live page came from.
+let buildSha = "unknown";
+try { buildSha = execSync("git rev-parse --short HEAD", { cwd: root.pathname }).toString().trim(); } catch {}
+const buildStamp = new Date().toISOString();
 const claimBy = new Map(claims.map((c) => [c.npi, c]));
 const featuredByCity = new Map();
 for (const f of featured) {
@@ -78,6 +83,7 @@ function layout(title, body, { desc = "", canonical = "", jsonld = null, depth =
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(desc)}">
 ${base && canonical ? `<link rel="canonical" href="${base}${canonical}">` : ""}
+<meta name="build" content="${esc(buildSha)} ${esc(buildStamp)}">
 <meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
 <link rel="stylesheet" href="${up}style.css?v=3">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><text y=%2226%22 font-size=%2228%22>%E2%9C%93</text></svg>">
