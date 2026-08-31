@@ -3,20 +3,14 @@
 The site is built, pushed, and deployed. These are the steps only you can do — each one
 unblocks a feature that is already coded and waiting for its value.
 
-## 1. Connect the repo to the live project  ✅ deployment claimed
+## 1. Deployment  ✅ done
 
-Live and permanent: **https://temporary-racing-beryl-kspa5t2.vercel.app**
-(project `temporary-racing-beryl-kspa5t2` in `xasdta's projects`).
+Live, claimed, renamed to `clearpath-aba`, and connected to GitHub with
+**Root Directory = `docs`** (Framework Preset: Other, no build command override —
+output directory correctly defaults to the root directory itself).
 
-It was created by a CLI deploy, so it is **not linked to GitHub yet** — pushes will not
-redeploy, and `scripts/refresh.sh` assumes they do. Fix once, in the Vercel dashboard:
-
-1. Project → **Settings → Git → Connect Git Repository** → `xasdta/clearpath-aba`
-2. Set **Root Directory = `docs`** (Framework Preset: Other; no build command)
-3. Optional but worth it: **Settings → General → Project Name** → `clearpath-aba`
-   (the project name is the public URL until a domain is attached)
-
-Verify by pushing any commit and watching a deployment appear.
+Every push to `main` now redeploys automatically, which is what `scripts/refresh.sh`
+relies on for the weekly data refresh.
 
 ## 2. Domain
 
