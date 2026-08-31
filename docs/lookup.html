@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Texas Behavior Analyst License Lookup (LBA/BCBA) | ClearPath ABA</title>
+<meta name="description" content="Free lookup: check whether a behavior analyst holds an active Texas LBA license, straight from the state roster.">
+
+<meta property="og:title" content="Texas Behavior Analyst License Lookup (LBA/BCBA) | ClearPath ABA"><meta property="og:description" content="Free lookup: check whether a behavior analyst holds an active Texas LBA license, straight from the state roster.">
+<link rel="stylesheet" href="./style.css?v=3">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><text y=%2226%22 font-size=%2228%22>%E2%9C%93</text></svg>">
+
+<script defer src="/_vercel/insights/script.js"></script>
+</head><body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="./index.html">ClearPath<span>ABA</span></a>
+  <nav><a href="./texas-aba-access-report.html">Access report</a><a href="./lookup.html">License lookup</a><a href="./methodology.html">Methodology</a><a class="cta" href="./for-clinics.html">For clinics</a></nav>
+</div></header>
+<main class="wrap">
+<h1>Is my behavior analyst licensed in Texas?</h1>
+<p class="lede">Texas requires behavior analysts to hold an active LBA (or assistant LBA) license through TDLR. Search the state roster below — 7,066 active licenses, synced 2026-08-31.</p>
+<div class="card">
+  <label class="wide">Search by name<input id="q" placeholder="Last name, or last, first" autocomplete="off"></label>
+  <div id="out" class="lookup-out"><p class="src">Type at least three letters.</p></div>
+</div>
+<div class="card"><h2>What this does and doesn't tell you</h2>
+<ul><li><b>An active license</b> means the state currently authorizes this person to practice behavior analysis in Texas.</li>
+<li><b>No match</b> usually means a name variant or an out-of-state license — not necessarily a problem. Ask the provider directly.</li>
+<li><b>RBTs</b> (registered behavior technicians) are certified nationally by the BACB, not licensed by Texas. Verify those at bacb.com.</li>
+<li>This roster does not include disciplinary detail. TDLR publishes enforcement actions separately.</li></ul></div>
+<script>
+let DATA=null;const q=document.getElementById('q'),out=document.getElementById('out');
+async function load(){if(!DATA){const r=await fetch('licenses.json');DATA=await r.json()}return DATA}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+let t;q.addEventListener('input',()=>{clearTimeout(t);t=setTimeout(run,150)});
+async function run(){const v=q.value.trim().toUpperCase();
+ if(v.length<3){out.innerHTML='<p class="src">Type at least three letters.</p>';return}
+ const d=await load();const hits=d.filter(r=>r[0].includes(v)).slice(0,60);
+ out.innerHTML=hits.length?'<table><tr><th>Name</th><th>License</th><th>Type</th><th>Status</th><th>Expires</th></tr>'+
+ hits.map(r=>'<tr><td>'+esc(r[0])+'</td><td>'+esc(r[1])+'</td><td>'+(r[2]==='A'?'Assistant LBA':'LBA')+'</td><td><span class="badge '+(r[3]==='a'?'ok">Active':'bad">Not active')+'</span></td><td>'+esc(r[4]||'')+'</td></tr>').join('')+'</table>'
+ :'<p class="src">No match in the Texas roster. Try last name only, or check national BACB certification at bacb.com.</p>'}
+</script></main>
+<footer class="wrap">
+  <p><b>How we verify.</b> Provider records come from the federal NPI registry; license status is matched against the Texas TDLR roster published on data.texas.gov and stamped with the date we checked it. Insurance acceptance and waitlist status are marked verified only after we confirm them directly with the clinic — anything unconfirmed says so. We publish license verification only when we can positively match an active license; we never assert that a clinic's license is invalid.</p>
+  <p><b>How we make money.</b> Clinics may buy a flat monthly featured listing. Placement in the regular directory is never for sale, and we never take a fee per referral or per enrolled client.</p>
+  <p class="fine">ClearPath ABA is an independent directory. It is not medical advice and does not endorse any provider. Data last built 2026-08-31. Corrections: <a href="mailto:corrections@clearpathaba.com">corrections@clearpathaba.com</a></p>
+</footer>
+</body></html>

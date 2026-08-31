@@ -1,0 +1,20 @@
+{
+  "name": "clearpath-aba",
+  "version": "1.0.0",
+  "description": "ClearPath ABA — license-verified ABA/autism therapy directory for Texas. Static site generated from public records. Zero dependencies (node:sqlite + node:http).",
+  "type": "module",
+  "scripts": {
+    "fetch:nppes": "node scripts/fetch-nppes.mjs",
+    "fetch:tdlr": "node scripts/fetch-tdlr.mjs",
+    "etl": "node scripts/etl.mjs",
+    "build": "node scripts/generate.mjs",
+    "prospects": "node scripts/build-prospects.mjs",
+    "pipeline": "npm run fetch:nppes && npm run fetch:tdlr && npm run etl && npm run build && npm run prospects",
+    "refresh": "./scripts/refresh.sh",
+    "serve": "node --run build && npx --yes serve docs -p 8430",
+    "ops": "node server.mjs"
+  },
+  "engines": { "node": ">=22.5" },
+  "license": "UNLICENSED",
+  "private": true
+}

@@ -1,0 +1,16 @@
+{
+  "_readme": "Public site configuration. Empty values gracefully disable their feature (no broken UI). Payment links and Web3Forms keys are public-by-design values, safe to commit; never put secret/API keys here.",
+  "siteName": "ClearPath ABA",
+  "tagline": "License-verified ABA therapy providers in Texas",
+  "domain": "",
+  "contactEmail": "hello@clearpathaba.com",
+  "correctionsEmail": "corrections@clearpathaba.com",
+  "stripeFeaturedLink": "",
+  "featuredPriceMonthly": 199,
+  "featuredPriceStandard": 399,
+  "web3formsKey": "",
+  "vercelAnalytics": true,
+  "featuredSlotsPerCity": 3,
+  "state": "TX",
+  "stateName": "Texas"
+}

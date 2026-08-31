@@ -1,0 +1,4 @@
+{
+  "_schema": "Each entry: {npi (must match a provider page), city (must match a generated city page), blurb, website?, phone?}. Slots are per-city (site.config.json featuredSlotsPerCity). A provider appears on the city page(s) they paid for. Order within a city = display order. Add an entry ONLY after payment clears AND the provider's license is verified.",
+  "providers": []
+}

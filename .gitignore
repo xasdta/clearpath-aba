@@ -1,0 +1,10 @@
+node_modules/
+.DS_Store
+logs/
+data/raw/
+data/*.db-wal
+data/*.db-shm
+outreach/prospects.csv
+.vercel
+.env
+.secrets

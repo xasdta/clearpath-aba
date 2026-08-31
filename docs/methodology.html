@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Methodology — How We Verify | ClearPath ABA</title>
+<meta name="description" content="Exactly how ClearPath ABA compiles and verifies Texas ABA provider data: sources, license matching, refresh cadence, and what we refuse to claim.">
+
+<meta property="og:title" content="Methodology — How We Verify | ClearPath ABA"><meta property="og:description" content="Exactly how ClearPath ABA compiles and verifies Texas ABA provider data: sources, license matching, refresh cadence, and what we refuse to claim.">
+<link rel="stylesheet" href="./style.css?v=3">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><text y=%2226%22 font-size=%2228%22>%E2%9C%93</text></svg>">
+
+<script defer src="/_vercel/insights/script.js"></script>
+</head><body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="./index.html">ClearPath<span>ABA</span></a>
+  <nav><a href="./texas-aba-access-report.html">Access report</a><a href="./lookup.html">License lookup</a><a href="./methodology.html">Methodology</a><a class="cta" href="./for-clinics.html">For clinics</a></nav>
+</div></header>
+<main class="wrap">
+<h1>How ClearPath is built</h1>
+<p class="lede">Everything here traces to a public record or a dated phone call. This page explains exactly where each fact comes from, and what we deliberately do not claim.</p>
+
+<h2>Sources</h2>
+<div class="card"><table>
+<tr><th>Layer</th><th>Source</th><th>Refresh</th></tr>
+<tr><td>Provider organizations</td><td>NPPES / NPI Registry, taxonomy 103K00000X (Behavior Analyst), organizational NPIs in Texas</td><td>Weekly</td></tr>
+<tr><td>License status</td><td>Texas TDLR licensing roster published on data.texas.gov (dataset 7358-krk7) — 9,549 behavior-analyst records, 7,066 active</td><td>Weekly</td></tr>
+<tr><td>Insurance acceptance</td><td>Confirmed by phone with the clinic; payer directories used only as a starting list</td><td>Every 6 months, or on claim</td></tr>
+<tr><td>Waitlist status</td><td>Asked directly; expires after 90 days by design</td><td>Quarterly</td></tr>
+</table></div>
+
+<h2>How license matching works</h2>
+<div class="card">
+<p>Each organizational NPI record names an authorized official. We normalize that name and look for a <b>unique</b> match in the state licensing roster. A unique match to an active license produces a dated "license verified" badge showing the license number, type, and expiry. Today 467 of 1379 organizations (33.9%) are verified this way.</p>
+<p><b>What we don't do:</b> we never publish that a clinic's license is expired or invalid on the strength of a name match. Non-matches are shown neutrally as "not confirmed," because the common causes are name variants, a director who differs from the administrative contact, or an out-of-state license — not wrongdoing. Verification improves as clinics claim their profiles.</p>
+<p><b>On the BACB registry:</b> the national certification registry's terms prohibit bulk harvesting and commercial republication, so we don't scrape it. We check BACB certification one record at a time during claim verification and store only the fact and date of that check.</p>
+</div>
+
+<h2>Ranking</h2>
+<div class="card"><p>City pages sort by (1) confirmed current availability, (2) verified license, then (3) alphabetically. Featured slots are paid, capped at 3 per city, and always labeled. Nothing else about payment touches ordering.</p></div>
+
+<h2>Corrections</h2>
+<div class="card"><p>Email <a href="mailto:corrections@clearpathaba.com">corrections@clearpathaba.com</a>. Corrections from families trigger a re-verification call, and we update the date stamp when we confirm. If you are a provider and something is wrong, claiming your profile is the fastest fix.</p></div></main>
+<footer class="wrap">
+  <p><b>How we verify.</b> Provider records come from the federal NPI registry; license status is matched against the Texas TDLR roster published on data.texas.gov and stamped with the date we checked it. Insurance acceptance and waitlist status are marked verified only after we confirm them directly with the clinic — anything unconfirmed says so. We publish license verification only when we can positively match an active license; we never assert that a clinic's license is invalid.</p>
+  <p><b>How we make money.</b> Clinics may buy a flat monthly featured listing. Placement in the regular directory is never for sale, and we never take a fee per referral or per enrolled client.</p>
+  <p class="fine">ClearPath ABA is an independent directory. It is not medical advice and does not endorse any provider. Data last built 2026-08-31. Corrections: <a href="mailto:corrections@clearpathaba.com">corrections@clearpathaba.com</a></p>
+</footer>
+</body></html>
