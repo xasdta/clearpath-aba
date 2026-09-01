@@ -1,7 +1,7 @@
 {
   "name": "clearpath-aba",
   "version": "1.0.0",
-  "description": "ClearPath ABA — license-verified ABA/autism therapy directory for Texas. Static site generated from public records. Zero dependencies (node:sqlite + node:http).",
+  "description": "ABA Openings — license-verified ABA/autism therapy directory for Texas. Static site generated from public records. Zero dependencies (node:sqlite + node:http).",
   "type": "module",
   "scripts": {
     "fetch:nppes": "node scripts/fetch-nppes.mjs",

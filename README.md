@@ -1,4 +1,4 @@
-# ClearPath ABA
+# ABA Openings
 
 License-verified ABA/autism therapy directory for Texas. **2,087 static pages** generated from
 public records — the federal NPI registry joined to the Texas TDLR licensing roster — deployed
@@ -9,7 +9,7 @@ portfolio. Zero runtime dependencies (`node:sqlite`, `node:http`; Node ≥ 22.5)
 
 ## The premise
 
-Most autism-therapy directories list whoever signs up. ClearPath starts from public records —
+Most autism-therapy directories list whoever signs up. ABA Openings starts from public records —
 every ABA organization in the federal registry — then verifies licenses against the state roster
 and confirms insurance and waitlists by phone. **When something isn't verified, the page says so.**
 

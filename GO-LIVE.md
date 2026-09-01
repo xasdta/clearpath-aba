@@ -27,7 +27,7 @@ sitemap URLs are relative and search engines will reject the file.
 ## 3. Payments (Stripe)
 
 1. Stripe Dashboard → Payment links → New → recurring, **$199/month**, name it
-   "ClearPath ABA — Founding Featured Listing (city)".
+   "ABA Openings — Founding Featured Listing (city)".
 2. Paste the `https://buy.stripe.com/...` URL into `stripeFeaturedLink` in `site.config.json`.
 3. `npm run build && git commit -am "Wire Stripe featured listing link" && git push`
 

@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p logs
-echo "=== ClearPath refresh $(date '+%Y-%m-%d %H:%M') ==="
+echo "=== ABA Openings refresh $(date '+%Y-%m-%d %H:%M') ==="
 
 node scripts/fetch-nppes.mjs
 node scripts/fetch-tdlr.mjs

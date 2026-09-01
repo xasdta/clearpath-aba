@@ -28,7 +28,7 @@ you open up and I'll re-verify same week.
 
 I'll remove the profile within one business day, no argument. (Worth knowing first: the
 underlying records are public — federal NPI registry and the state license roster — so removal
-takes you out of ClearPath, not out of the public record. Most clinics would rather correct the
+takes you out of ABA Openings, not out of the public record. Most clinics would rather correct the
 page than vanish from a list families are reading. Your call either way.)
 
 ## "Something on our page is wrong."

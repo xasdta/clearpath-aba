@@ -1,4 +1,4 @@
-// Build the ClearPath SQLite database from raw NPPES + TDLR pulls.
+// Build the ABA Openings SQLite database from raw NPPES + TDLR pulls.
 // - organizations/sites backbone from NPPES (public record)
 // - clinicians (license layer) from TDLR via data.texas.gov (public record)
 // - authorized-official license matching: an org whose NPPES authorized official

@@ -13,11 +13,11 @@ prospects.csv and never emailed again.
 
 ## E1 — Your listing is live (no ask)
 
-**Subject:** Your ClearPath listing — {{clinic}}, license verified
+**Subject:** Your ABA Openings listing — {{clinic}}, license verified
 
 Hi {{first_name}},
 
-I built ClearPath ABA, a directory of Texas ABA providers compiled from the federal NPI
+I built ABA Openings, a directory of Texas ABA providers compiled from the federal NPI
 registry and the state licensing roster — not from sign-ups, so {{clinic}} is already listed
 whether or not you ever talk to me.
 
@@ -33,7 +33,7 @@ by exactly those fields, so a blank profile mostly gets skipped.
 Anything wrong on the page? Tell me and I'll fix it today.
 
 — {{sender}}
-{{sender_title}} · ClearPath ABA · {{mailing_address}}
+{{sender_title}} · ABA Openings · {{mailing_address}}
 Don't want these emails? Reply "stop" and I won't write again.
 
 ---
@@ -44,7 +44,7 @@ Don't want these emails? Reply "stop" and I won't write again.
 
 Hi {{first_name}},
 
-Following up on your ClearPath listing ({{profile_url}}).
+Following up on your ABA Openings listing ({{profile_url}}).
 
 Families searching "ABA therapy {{city}}" and "ABA in {{city}} that takes {{payer}}" land on the
 city page. I'm opening **three founding featured slots per city** — top placement on the
@@ -65,7 +65,7 @@ clean for clinics with Medicaid volume.
 I verify your license and listing details before billing starts. Want the {{city}} slot?
 
 — {{sender}}
-{{sender_title}} · ClearPath ABA · {{mailing_address}} · reply "stop" to opt out
+{{sender_title}} · ABA Openings · {{mailing_address}} · reply "stop" to opt out
 
 ---
 
@@ -85,13 +85,13 @@ link.
 If this isn't useful, tell me and I'll stop.
 
 — {{sender}}
-{{sender_title}} · ClearPath ABA · {{mailing_address}} · reply "stop" to opt out
+{{sender_title}} · ABA Openings · {{mailing_address}} · reply "stop" to opt out
 
 ---
 
 ## Physician-referral mailer (the 42% channel — separate track)
 
-Print one-pagers per metro: current waitlist map of that city, ClearPath URL, no sales copy.
+Print one-pagers per metro: current waitlist map of that city, ABA Openings URL, no sales copy.
 Mail to developmental pediatricians, ECI/Part C coordinators, and school district diagnosticians.
 They hand it to families at diagnosis, which is the moment that matters. Track with a per-metro
 short URL. This is the highest-value channel in the plan and costs postage.

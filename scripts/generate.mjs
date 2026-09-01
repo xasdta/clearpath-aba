@@ -1,4 +1,4 @@
-// Static site generator for ClearPath ABA -> docs/ (Vercel serves this directory).
+// Static site generator for ABA Openings -> docs/ (Vercel serves this directory).
 // Reads data/clearpath.db (built by etl.mjs) plus featured.json / claims.json / site.config.json.
 //
 // PUBLISHING RULE (important, enforced below):
@@ -121,14 +121,14 @@ ${jsonld ? `<script type="application/ld+json">${JSON.stringify(jsonld)}</script
 ${cfg.vercelAnalytics ? `<script defer src="/_vercel/insights/script.js"></script>` : ""}
 </head><body>
 <header class="top"><div class="wrap">
-  <a class="brand" href="${up}index.html">ClearPath<span>ABA</span></a>
+  <a class="brand" href="${up}index.html">ABA<span>Openings</span></a>
   <nav><a href="${up}openings.html">Openings</a><a href="${up}texas-aba-access-report.html">Access report</a><a href="${up}lookup.html">License lookup</a><a href="${up}methodology.html">Methodology</a><a class="cta" href="${up}for-clinics.html">For clinics</a></nav>
 </div></header>
 <main class="wrap">${body}</main>
 <footer class="wrap">
   <p><b>How we verify.</b> Provider records come from the federal NPI registry; license status is matched against the Texas TDLR roster published on data.texas.gov and stamped with the date we checked it. Insurance acceptance and waitlist status are marked verified only after we confirm them directly with the clinic — anything unconfirmed says so. We publish license verification only when we can positively match an active license; we never assert that a clinic's license is invalid.</p>
   <p><b>How we make money.</b> Clinics may buy a flat monthly featured listing. Placement in the regular directory is never for sale, and we never take a fee per referral or per enrolled client.</p>
-  <p class="fine">ClearPath ABA is an independent directory. It is not medical advice and does not endorse any provider. Data last built ${today}. Corrections: <a href="mailto:${esc(cfg.correctionsEmail)}">${esc(cfg.correctionsEmail)}</a></p>
+  <p class="fine">${esc(cfg.siteName)} is an independent directory. It is not medical advice and does not endorse any provider. Data last built ${today}. Corrections: <a href="mailto:${esc(cfg.correctionsEmail)}">${esc(cfg.correctionsEmail)}</a></p>
 </footer>
 </body></html>`;
 }
@@ -332,7 +332,7 @@ ${pays.map((p) => `<tr><td>${esc(PAYERS[p.payer] ?? p.payer)}</td><td>${
 <div class="src">We mark a plan accepted only after confirming it with the clinic directly. Always re-confirm coverage before your first appointment — plan networks change.</div></div>
 
 <h2>Ask this provider about availability</h2>
-${formOpen(`ClearPath inquiry — ${o.name}`, 1)}
+${formOpen(`Inquiry — ${o.name}`, 1)}
   <input type="hidden" name="provider" value="${esc(o.name)} (NPI ${esc(o.npi)})">
   <div class="f2"><label>Your name<input name="name" required></label><label>Email or phone<input name="contact" required></label></div>
   <div class="f2"><label>Insurance<select name="insurance">${Object.values(PAYERS).map((v) => `<option>${esc(v)}</option>`).join("")}<option>Other / self-pay</option></select></label>
@@ -345,7 +345,7 @@ ${formOpen(`ClearPath inquiry — ${o.name}`, 1)}
 <div class="card cta-band"><div>Is this your clinic? Claim the profile free to fix your insurance list, add your waitlist, and answer inquiries.</div><a class="btn" href="../for-clinics.html">Claim this profile</a></div>
 <p class="src">Something wrong here? <a href="mailto:${esc(cfg.correctionsEmail)}?subject=Correction%20for%20NPI%20${esc(o.npi)}">Report a correction</a> — we re-verify by phone and update the date stamp.</p>`;
 
-  return layout(`${o.name} — ABA Therapy in ${o.city}, TX | ClearPath ABA`, body, {
+  return layout(`${o.name} — ABA Therapy in ${o.city}, TX | ${cfg.siteName}`, body, {
     desc: `${o.name} in ${o.city}, Texas: license verification, insurance acceptance, and current waitlist status for ABA therapy.`,
     canonical: `/providers/${o.npi}.html`, jsonld, depth: 1,
   });
@@ -376,7 +376,7 @@ async function run(){const v=q.value.trim().toUpperCase();
  hits.map(r=>'<tr><td>'+esc(r[0])+'</td><td>'+esc(r[1])+'</td><td>'+(r[2]==='A'?'Assistant LBA':'LBA')+'</td><td><span class="badge '+(r[3]==='a'?'ok">Active':'bad">Not active')+'</span></td><td>'+esc(r[4]||'')+'</td></tr>').join('')+'</table>'
  :'<p class="src">No match in the Texas roster. Try last name only, or check national BACB certification at bacb.com.</p>'}
 </script>`;
-  return layout("Texas Behavior Analyst License Lookup (LBA/BCBA) | ClearPath ABA", body, {
+  return layout(`Texas Behavior Analyst License Lookup (LBA/BCBA) | ${cfg.siteName}`, body, {
     desc: "Free lookup: check whether a behavior analyst holds an active Texas LBA license, straight from the state roster.",
     canonical: "/lookup.html",
   });
@@ -397,7 +397,7 @@ function forClinicsPage() {
 <li>Get license-verified: we match your director to the TDLR roster and date-stamp it.</li>
 <li>Receive family inquiries at no charge.</li></ul>
 <p><b>Claiming never affects your ranking.</b> We sort by confirmed availability and verified credentials — never by who pays.</p>
-${formOpen("ClearPath claim request")}
+${formOpen("Claim request")}
   <div class="f2"><label>Clinic name<input name="clinic" required></label><label>Your name<input name="name" required></label></div>
   <div class="f2"><label>Role<input name="role" placeholder="Owner / Clinical Director" required></label><label>Work email<input name="email" type="email" required></label></div>
   <div class="f2"><label>NPI or city<input name="npi" placeholder="10-digit NPI"></label><label>TX license #<input name="license" placeholder="BHV-XXXX"></label></div>
@@ -422,7 +422,7 @@ ${payBlock}
 <ul><li><b>No pay-for-placement in the regular directory.</b> Featured slots are labeled as featured, everywhere they appear.</li>
 <li><b>No per-referral or per-client fees</b>, ever — flat monthly only. That keeps us clean under federal and state anti-kickback rules for clinics with Medicaid volume, and it keeps our rankings honest.</li>
 <li><b>No selling family contact data.</b> Inquiries go to the provider the family chose.</li></ul></div>`;
-  return layout("For ABA Clinics — Claim Your Listing | ClearPath ABA", body, {
+  return layout(`For ABA Clinics — Claim Your Listing | ${cfg.siteName}`, body, {
     desc: "Claim your ABA clinic's verified listing free, or take a founding featured slot. Flat monthly pricing, never per-referral fees.",
     canonical: "/for-clinics.html",
   });
@@ -431,7 +431,7 @@ ${payBlock}
 function methodologyPage() {
   const matchRate = ((verifiedOrgs.length / orgs.length) * 100).toFixed(1);
   const body = `
-<h1>How ClearPath is built</h1>
+<h1>How ${esc(cfg.siteName)} is built</h1>
 <p class="lede">Everything here traces to a public record or a dated phone call. This page explains exactly where each fact comes from, and what we deliberately do not claim.</p>
 
 <h2>Sources</h2>
@@ -455,8 +455,8 @@ function methodologyPage() {
 
 <h2>Corrections</h2>
 <div class="card"><p>Email <a href="mailto:${esc(cfg.correctionsEmail)}">${esc(cfg.correctionsEmail)}</a>. Corrections from families trigger a re-verification call, and we update the date stamp when we confirm. If you are a provider and something is wrong, claiming your profile is the fastest fix.</p></div>`;
-  return layout("Methodology — How We Verify | ClearPath ABA", body, {
-    desc: "Exactly how ClearPath ABA compiles and verifies Texas ABA provider data: sources, license matching, refresh cadence, and what we refuse to claim.",
+  return layout(`Methodology — How We Verify | ${cfg.siteName}`, body, {
+    desc: "Exactly how ABA Openings compiles and verifies Texas ABA provider data: sources, license matching, refresh cadence, and what we refuse to claim.",
     canonical: "/methodology.html",
   });
 }
@@ -512,7 +512,7 @@ ${top.map((c) => `<tr><td><a href="tx/${c.city_slug}/index.html">${esc(c.city)}<
 
 <h2>Method and limits</h2>
 <div class="card"><p>Organization counts come from the NPPES registry (taxonomy 103K00000X, organizational NPIs, Texas practice address) and will slightly overstate operating clinics, because some registrations are dormant or single-purpose entities. License counts come from the TDLR roster on data.texas.gov. License matching is name-based and requires a unique match, so verified counts are a floor, not a ceiling. Full detail on the <a href="methodology.html">methodology page</a>. Reuse these numbers freely with a link.</p></div>`;
-  return layout("Texas ABA Access Report — Provider Supply and Verification | ClearPath ABA", body, {
+  return layout(`Texas ABA Access Report — Provider Supply and Verification | ${cfg.siteName}`, body, {
     desc: `Where Texas families can actually get ABA therapy: ${orgs.length.toLocaleString()} organizations, ${activeLicenses.length.toLocaleString()} licensed analysts, and verification rates across 20 metros.`,
     canonical: "/texas-aba-access-report.html",
   });
@@ -567,7 +567,7 @@ const thanksPage = () => layout(`Thank you | ${cfg.siteName}`, `
 <p class="lede">Your message is on its way. If you asked a provider about availability, they'll reach out directly. If you claimed a listing, we'll verify your license and call the clinic's number on public record, usually within two business days.</p>
 <p><a class="btn" href="index.html">Back to the directory</a></p>`, { canonical: "/thanks.html" });
 
-const notFoundPage = () => layout("Page not found | ClearPath ABA", `
+const notFoundPage = () => layout("Page not found | ${cfg.siteName}", `
 <h1>That page doesn't exist</h1>
 <p class="lede">It may have moved, or a provider record may have been retired.</p>
 <p><a class="btn" href="/index.html">Back to the directory</a> <a class="btn ghost" href="/lookup.html">License lookup</a></p>`);
