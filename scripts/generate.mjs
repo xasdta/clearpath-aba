@@ -59,12 +59,42 @@ for (const p of db.prepare(`SELECT * FROM payer_acceptance`).all()) {
 }
 
 const daysAgo = (iso) => Math.floor((Date.now() - new Date(iso + "T00:00:00Z")) / 86400000);
+const FRESH_DAYS = 30;  // authoritative: we say "has openings" only inside this window
+const AGING_DAYS = 90;  // shown, but explicitly caveated
+const ago = (d) => (d === 0 ? "today" : d === 1 ? "yesterday" : d < 14 ? `${d} days ago` : d < 60 ? `${Math.round(d / 7)} weeks ago` : `${Math.round(d / 30)} months ago`);
+
+// Availability is the product, so recency is graded rather than binary:
+//   fresh (<=30d)  — authoritative, countable as a real opening
+//   aging (31-90d) — shown with an explicit "last confirmed" caveat, not countable
+//   stale (>90d)   — treated as unknown; we ask again rather than assert
+//   none           — never collected
 function availState(siteId) {
   const a = availByS.get(siteId);
-  if (!a) return { cls: "mut", label: "Waitlist status not yet collected", fresh: false, accepting: false };
-  if (daysAgo(a.as_of) > 90) return { cls: "warn", label: `Waitlist unverified since ${a.as_of}`, fresh: false, accepting: false };
-  if (a.accepting) return { cls: "ok", label: `Accepting clients${a.est_wait_weeks != null ? ` — about ${a.est_wait_weeks} week wait` : ""} (confirmed ${a.as_of})`, fresh: true, accepting: true };
-  return { cls: "bad", label: `Waitlist closed (confirmed ${a.as_of})`, fresh: true, accepting: false };
+  if (!a) return { tier: "none", cls: "mut", label: "Openings not yet confirmed", accepting: false, countable: false, days: null };
+  const d = daysAgo(a.as_of);
+  const wait = a.est_wait_weeks != null ? ` — about ${a.est_wait_weeks} week wait` : "";
+  if (d > AGING_DAYS)
+    return { tier: "stale", cls: "mut", label: `Status needs re-confirming (last checked ${ago(d)})`, accepting: false, countable: false, days: d };
+  if (a.accepting) {
+    const aging = d > FRESH_DAYS;
+    return {
+      tier: aging ? "aging" : "fresh", cls: aging ? "warn" : "ok",
+      label: aging ? `Was accepting${wait} — last confirmed ${ago(d)}` : `Accepting clients${wait} — confirmed ${ago(d)}`,
+      accepting: true, countable: !aging, days: d,
+    };
+  }
+  return {
+    tier: d > FRESH_DAYS ? "aging" : "fresh", cls: "bad",
+    label: d > FRESH_DAYS ? `Was full — last confirmed ${ago(d)}` : `Waitlist closed — confirmed ${ago(d)}`,
+    accepting: false, countable: false, days: d,
+  };
+}
+// Sort key for "who can take my child": fresh openings first, then aging openings,
+// then verified-but-unknown, then everything else; ties broken by recency.
+function openingsRank(o) {
+  const av = availState(o.site_id);
+  const tierScore = av.accepting ? (av.tier === "fresh" ? 0 : 1) : av.tier === "none" ? 3 : av.tier === "stale" ? 4 : 5;
+  return [tierScore, o.ao_license_status === "active" ? 0 : 1, av.days ?? 999];
 }
 // POSITIVE-ONLY license rendering (see header rule)
 function licBadge(o) {
@@ -92,7 +122,7 @@ ${cfg.vercelAnalytics ? `<script defer src="/_vercel/insights/script.js"></scrip
 </head><body>
 <header class="top"><div class="wrap">
   <a class="brand" href="${up}index.html">ClearPath<span>ABA</span></a>
-  <nav><a href="${up}texas-aba-access-report.html">Access report</a><a href="${up}lookup.html">License lookup</a><a href="${up}methodology.html">Methodology</a><a class="cta" href="${up}for-clinics.html">For clinics</a></nav>
+  <nav><a href="${up}openings.html">Openings</a><a href="${up}texas-aba-access-report.html">Access report</a><a href="${up}lookup.html">License lookup</a><a href="${up}methodology.html">Methodology</a><a class="cta" href="${up}for-clinics.html">For clinics</a></nav>
 </div></header>
 <main class="wrap">${body}</main>
 <footer class="wrap">
@@ -119,68 +149,86 @@ function formOpen(subject, redirectDepth = 0) {
 // ---------- pages ----------
 function homePage() {
   const topCities = cities.slice(0, 18);
+  const openCount = orgs.filter((o) => availState(o.site_id).countable).length;
+  const askedCount = orgs.filter((o) => availState(o.site_id).tier !== "none").length;
   const jsonld = {
     "@context": "https://schema.org", "@type": "WebSite", name: cfg.siteName,
     url: base || undefined, description: cfg.tagline,
   };
   const body = `
-<h1>ABA therapy in Texas, with the credentials actually checked</h1>
-<p class="lede">Most autism-therapy directories list whoever signs up. We start from public records — every provider in the federal registry — then verify licenses against the state roster and confirm insurance and waitlists by phone. When something isn't verified yet, we say so.</p>
+<h1>Which Texas ABA clinics can actually take your child right now</h1>
+<p class="lede">Most autism-therapy directories list whoever signs up and never ask again, so you call ten clinics and hear "we have a six-month waitlist" ten times. We call the clinics, ask whether they can take a new client, and publish the answer with the date we got it — then re-ask every 30 days and retire anything we cannot re-confirm.</p>
 
 <div class="stats">
+  <div><b>${openCount}</b><span>clinics with confirmed openings</span></div>
+  <div><b>${askedCount.toLocaleString()}</b><span>clinics asked so far</span></div>
   <div><b>${orgs.length.toLocaleString()}</b><span>ABA organizations statewide</span></div>
-  <div><b>${verifiedOrgs.length}</b><span>with a license-verified clinical director</span></div>
-  <div><b>${activeLicenses.length.toLocaleString()}</b><span>active Texas behavior analysts</span></div>
-  <div><b>${cities.length}</b><span>cities covered</span></div>
+  <div><b>${verifiedOrgs.length}</b><span>with a license-verified director</span></div>
 </div>
 
 <section class="card highlight">
-  <h2>Find providers near you</h2>
+  <h2>Find clinics near you</h2>
   <form class="finder" action="#" onsubmit="return cpGo(event)">
     <label>City<select id="cpCity">${cities.slice(0, 60).map((c) => `<option value="${c.city_slug}">${esc(c.city)} (${c.n})</option>`).join("")}</select></label>
     <label>Insurance<select id="cpPayer"><option value="">Any</option>${Object.entries(PAYERS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></label>
+    <label class="chk"><input type="checkbox" id="cpOpen"> Only show clinics accepting now</label>
     <button>Search</button>
   </form>
-  <script>function cpGo(e){e.preventDefault();var c=document.getElementById('cpCity').value,p=document.getElementById('cpPayer').value;location.href='tx/'+c+(p?'/accepts-'+p+'.html':'/index.html');return false}</script>
+  <script>function cpGo(e){e.preventDefault();var c=document.getElementById('cpCity').value,p=document.getElementById('cpPayer').value,o=document.getElementById('cpOpen').checked;location.href='tx/'+c+'/'+(o?'accepting-now.html':(p?'accepts-'+p+'.html':'index.html'));return false}</script>
+  <p class="src" style="margin-top:.6rem">Or see <a href="openings.html"><b>every confirmed opening in Texas</b></a> on one page.</p>
 </section>
 
 <h2>Browse by city</h2>
-<div class="grid">${topCities.map((c) => `<a class="card tile" href="tx/${c.city_slug}/index.html"><b>${esc(c.city)}</b><span>${c.n} provider${c.n === 1 ? "" : "s"}</span></a>`).join("")}</div>
+<div class="grid">${topCities.map((c) => {
+    const n = orgs.filter((o) => o.city_slug === c.city_slug && availState(o.site_id).countable).length;
+    return `<a class="tile card" href="tx/${c.city_slug}/index.html"><b>${esc(c.city)}</b><span>${c.n} provider${c.n === 1 ? "" : "s"}${n ? ` · ${n} accepting` : ""}</span></a>`;
+  }).join("")}</div>
 
-<h2>Two things no other ABA directory shows you</h2>
+${alertSignup(null, null, 0)}
+
+<h2>What makes this different</h2>
 <div class="grid two">
-  <div class="card"><h3>Whether the license is real and current</h3><p>Texas requires behavior analysts to hold an active LBA license. We match each organization's clinical director against the state roster and show the license number, type, and the date we checked. <a href="lookup.html">Look up any behavior analyst →</a></p></div>
-  <div class="card"><h3>Whether they can actually take your child</h3><p>Roughly three in four families end up on a waitlist, averaging months. We ask clinics directly and stamp the answer with a date — and let it visibly expire after 90 days rather than quietly going stale.</p></div>
+  <div class="card"><h3>We ask, and we date the answer</h3><p>Roughly three in four families end up waiting, and the average wait runs months. Nobody else publishes who has room. We collect it by phone, stamp it with the date, and let it visibly expire rather than quietly going stale.</p></div>
+  <div class="card"><h3>We check the license against the state</h3><p>Texas requires behavior analysts to hold an active LBA license. We match each organization's clinical director against the state roster and show what we found — and say plainly when we could not confirm it. <a href="lookup.html">Look up any analyst →</a></p></div>
 </div>
 
 <div class="card cta-band">
   <div><b>New report:</b> where Texas families can actually get ABA — provider density, verification rates, and access gaps across 20 metros.</div>
   <a class="btn" href="texas-aba-access-report.html">Read the access report</a>
 </div>`;
-  return layout(`ClearPath ABA — License-Verified ABA Therapy Directory (Texas)`, body, {
-    desc: `${orgs.length.toLocaleString()} Texas ABA therapy providers with license verification, confirmed insurance acceptance, and real waitlist status.`,
+  return layout(`${cfg.siteName} — Which Texas ABA Clinics Are Accepting New Clients`, body, {
+    desc: `${openCount} Texas ABA clinics with confirmed openings, dated and re-checked every 30 days, plus license verification for ${orgs.length.toLocaleString()} providers.`,
     canonical: "/", jsonld,
   });
 }
 
-function cityPage(c, payer = null) {
+function cityPage(c, payer = null, openOnly = false) {
   const sites = orgs.filter((o) => o.city_slug === c.city_slug);
   const feats = (featuredByCity.get(c.city.toLowerCase()) ?? []).slice(0, cfg.featuredSlotsPerCity);
-  const ranked = [...sites].sort((a, b) => {
-    const av = (o) => (o.ao_license_status === "active" ? 1 : 0);
-    const acc = (o) => (availState(o.site_id).accepting ? 1 : 0);
-    return acc(b) - acc(a) || av(b) - av(a) || a.name.localeCompare(b.name);
-  }).filter((o) => (payer ? payerStatus(o.site_id, payer)?.status !== "verified_no" : true));
+  const ranked = [...sites]
+    .filter((o) => (payer ? payerStatus(o.site_id, payer)?.status !== "verified_no" : true))
+    .filter((o) => (openOnly ? availState(o.site_id).accepting : true))
+    .sort((a, b) => {
+      const [ra, rb] = [openingsRank(a), openingsRank(b)];
+      return ra[0] - rb[0] || ra[1] - rb[1] || ra[2] - rb[2] || a.name.localeCompare(b.name);
+    });
+  const openCount = sites.filter((o) => availState(o.site_id).countable).length;
 
-  const title = payer
+  const title = openOnly
+    ? `ABA therapy in ${c.city}, TX accepting new clients`
+    : payer
     ? `ABA therapy in ${c.city}, TX that accepts ${PAYERS[payer]}`
     : `ABA therapy providers in ${c.city}, Texas`;
   const body = `
-<nav class="crumbs"><a href="../../index.html">Home</a> › ${payer ? `<a href="index.html">${esc(c.city)}</a> › ${esc(PAYERS[payer])}` : esc(c.city)}</nav>
+<nav class="crumbs"><a href="../../index.html">Home</a> › ${payer || openOnly ? `<a href="index.html">${esc(c.city)}</a> › ${openOnly ? "Accepting now" : esc(PAYERS[payer])}` : esc(c.city)}</nav>
 <h1>${esc(title)}</h1>
-<p class="lede">${ranked.length} provider${ranked.length === 1 ? "" : "s"} compiled from public records. ${payer ? `Insurance acceptance is confirmed by phone before we show it as accepted — insurer directories are wrong often enough that regulators call them ghost networks.` : `Sorted by confirmed availability, then verified license.`}</p>
+<p class="lede">${openOnly
+    ? (ranked.length
+        ? `${ranked.length} clinic${ranked.length === 1 ? "" : "s"} in ${esc(c.city)} told us they can take new clients. Each one is dated — we re-ask every 30 days, and we never leave an old answer standing as if it were current.`
+        : `No ${esc(c.city)} clinic has confirmed openings with us in the last 90 days. That is an honest gap in our data, not proof that everyone is full — we are working down the call list. Set an alert below and we will email you the moment one opens.`)
+    : `${ranked.length} provider${ranked.length === 1 ? "" : "s"} compiled from public records${openCount ? `, ${openCount} with confirmed openings right now` : ""}. ${payer ? `Insurance acceptance is confirmed by phone before we show it as accepted — insurer directories are wrong often enough that regulators call them ghost networks.` : `Sorted so clinics that can actually take your child come first.`}`}</p>
 
-${payer ? "" : `<div class="chips">${Object.entries(PAYERS).map(([k, v]) => `<a class="chip" href="accepts-${k}.html">Accepts ${esc(v)}</a>`).join("")}</div>`}
+${openOnly ? "" : `<div class="chips"><a class="chip open" href="accepting-now.html">✓ Accepting new clients${openCount ? ` (${openCount})` : ""}</a>${payer ? "" : Object.entries(PAYERS).map(([k, v]) => `<a class="chip" href="accepts-${k}.html">Accepts ${esc(v)}</a>`).join("")}</div>`}
 
 ${feats.length ? `<h2 class="fh">Featured providers</h2>
 <div class="grid">${feats.map((f) => {
@@ -189,7 +237,7 @@ ${feats.length ? `<h2 class="fh">Featured providers</h2>
       <p>${esc(f.blurb ?? "")}</p><div class="src">${esc(o.city)}${f.phone ? " · " + esc(f.phone) : ""}</div></div>` : "";
   }).join("")}</div>` : ""}
 
-<h2>All providers${payer ? ` accepting ${esc(PAYERS[payer])}` : ""}</h2>
+<h2>${openOnly ? "Confirmed openings" : `All providers${payer ? ` accepting ${esc(PAYERS[payer])}` : ""}`}</h2>
 ${ranked.map((o) => {
     const av = availState(o.site_id);
     const p = payer ? payerStatus(o.site_id, payer) : null;
@@ -206,13 +254,33 @@ ${ranked.map((o) => {
 </div>`;
   }).join("")}
 
-${ranked.length === 0 ? `<div class="notice">No providers listed here yet.</div>` : ""}
-<div class="card cta-band"><div>Run a clinic in ${esc(c.city)}? Claim your profile free — correct your insurance list and keep your waitlist current.</div><a class="btn" href="../../for-clinics.html">Claim your listing</a></div>`;
+${ranked.length === 0 && !openOnly ? `<div class="notice">No providers listed here yet.</div>` : ""}
+${alertSignup(c.city, c.city_slug, 2)}
+<div class="card cta-band"><div>Run a clinic in ${esc(c.city)}? Claim your profile free, then keep your openings current so families can find you.</div><a class="btn" href="../../for-clinics.html">Claim your listing</a></div>`;
 
-  return layout(`${title} | ClearPath ABA`, body, {
-    desc: `${ranked.length} ABA therapy providers in ${c.city}, TX${payer ? ` accepting ${PAYERS[payer]}` : ""} — license-verified, with confirmed insurance and waitlist status.`,
-    canonical: `/tx/${c.city_slug}${payer ? `/accepts-${payer}.html` : ""}`, depth: 2,
+  return layout(`${title} | ${cfg.siteName}`, body, {
+    desc: openOnly
+      ? `ABA clinics in ${c.city}, Texas confirmed to be accepting new clients, each with the date we checked.`
+      : `${ranked.length} ABA therapy providers in ${c.city}, TX${payer ? ` accepting ${PAYERS[payer]}` : ""} — license-verified, with confirmed insurance and openings status.`,
+    canonical: `/tx/${c.city_slug}${openOnly ? "/accepting-now.html" : payer ? `/accepts-${payer}.html` : ""}`, depth: 2,
   });
+}
+
+// Family alert signup — the owned-audience asset and the honest answer when a page has no openings.
+function alertSignup(cityLabel, citySlug, depth) {
+  return `<div class="card highlight" id="alerts">
+<h2>Get told when a clinic opens up${cityLabel ? ` in ${esc(cityLabel)}` : ""}</h2>
+<p>Waitlists move without warning. Tell us what you need and we will email you when a clinic near you confirms an opening — no more calling ten clinics a month to ask.</p>
+${formOpen(`Openings alert signup${cityLabel ? ` — ${cityLabel}` : ""}`, depth)}
+  <input type="hidden" name="alert_city" value="${esc(citySlug ?? "")}">
+  <div class="f2"><label>Email<input name="email" type="email" required></label>
+  <label>ZIP code<input name="zip" required></label></div>
+  <div class="f2"><label>Insurance<select name="insurance">${Object.values(PAYERS).map((v) => `<option>${esc(v)}</option>`).join("")}<option>Other / self-pay</option></select></label>
+  <label>Child's age<select name="child_age"><option>0-3</option><option>4-6</option><option>7-12</option><option>13+</option></select></label></div>
+  <label>How far will you travel?<select name="radius"><option>10 miles</option><option selected>25 miles</option><option>50 miles</option></select></label>
+  <button>Email me when a spot opens</button>
+  <div class="src">One email per matching opening, at most one a week. Unsubscribe in a click. We never sell your information, and we never share it with clinics unless you contact them yourself.</div>
+</form></div>`;
 }
 
 function providerPage(o) {
@@ -450,7 +518,51 @@ ${top.map((c) => `<tr><td><a href="tx/${c.city_slug}/index.html">${esc(c.city)}<
   });
 }
 
-const thanksPage = () => layout("Thank you | ClearPath ABA", `
+// Statewide openings page — the shareable asset for parent groups and the physician mailer.
+function openingsPage() {
+  const open = orgs.map((o) => ({ o, av: availState(o.site_id) }))
+    .filter((r) => r.av.accepting)
+    .sort((a, b) => (a.av.days ?? 999) - (b.av.days ?? 999));
+  const byCity = new Map();
+  for (const r of open) {
+    if (!byCity.has(r.o.city)) byCity.set(r.o.city, []);
+    byCity.get(r.o.city).push(r);
+  }
+  const checkedCount = orgs.filter((o) => availState(o.site_id).tier !== "none").length;
+  const body = `
+<h1>Texas ABA clinics accepting new clients</h1>
+<p class="lede">Every clinic below told us directly that they can take new clients, and every entry is dated. We re-ask every 30 days and retire any answer we cannot re-confirm — an old "yes" is worse than no answer at all when you are the one making the calls.</p>
+
+<div class="stats">
+  <div><b>${open.length}</b><span>clinics with confirmed openings</span></div>
+  <div><b>${byCity.size}</b><span>cities with an opening</span></div>
+  <div><b>${checkedCount}</b><span>of ${orgs.length.toLocaleString()} clinics asked so far</span></div>
+</div>
+
+${open.length === 0 ? `<div class="notice"><b>We have not confirmed any openings yet.</b> Availability is collected by calling clinics one at a time, and we are early in that work — so this page is empty rather than padded with guesses. Set an alert below and you will hear the moment that changes.</div>` : ""}
+
+${[...byCity.entries()].map(([city, rows]) => `
+<h2>${esc(city)} <span class="src">(${rows.length})</span></h2>
+${rows.map(({ o, av }) => `<div class="card row"><div class="row-main">
+  <a href="providers/${o.npi}.html"><b>${esc(o.name)}</b></a>
+  <div class="src">${esc(o.address1 ?? "")} · ${esc(o.city)}, TX${o.phone ? ` · ${esc(o.phone)}` : ""}</div>
+  <div class="badges">${licBadge(o)}<span class="badge ${av.cls}">${esc(av.label)}</span></div>
+</div></div>`).join("")}`).join("")}
+
+${alertSignup(null, null, 0)}
+
+<div class="card"><h2>How this list stays honest</h2>
+<ul><li><b>Dated, not assumed.</b> Every entry shows when we last confirmed it, in plain language.</li>
+<li><b>Openings expire.</b> After 30 days an answer stops counting as current; after 90 we drop the claim entirely and ask again.</li>
+<li><b>Empty beats wrong.</b> If we have not asked a city yet, this page says so instead of guessing.</li>
+<li><b>Clinics cannot buy their way onto this list.</b> Featured placement is labeled and sold separately; it never changes whether a clinic appears here.</li></ul></div>`;
+  return layout(`Texas ABA Clinics Accepting New Clients | ${cfg.siteName}`, body, {
+    desc: `${open.length} Texas ABA clinics confirmed to be accepting new clients, each dated and re-checked every 30 days.`,
+    canonical: "/openings.html",
+  });
+}
+
+const thanksPage = () => layout(`Thank you | ${cfg.siteName}`, `
 <h1>Got it — thank you</h1>
 <p class="lede">Your message is on its way. If you asked a provider about availability, they'll reach out directly. If you claimed a listing, we'll verify your license and call the clinic's number on public record, usually within two business days.</p>
 <p><a class="btn" href="index.html">Back to the directory</a></p>`, { canonical: "/thanks.html" });
@@ -506,6 +618,7 @@ a.tile:hover{border-color:var(--accent)}a.tile span{color:var(--faint);font-size
 .chips{display:flex;flex-wrap:wrap;gap:.4rem;margin:.9rem 0}
 .chip{font-size:.82rem;text-decoration:none;background:var(--card);border:1px solid var(--rule);padding:.3rem .65rem;border-radius:99px;color:var(--soft)}
 .chip:hover{border-color:var(--accent);color:var(--accent-d)}
+.chip.open{border-color:var(--accent);color:var(--accent-d);font-weight:600;background:var(--accent-bg)}
 table{border-collapse:collapse;width:100%;font-size:.92rem}
 th,td{text-align:left;padding:.45rem .6rem;border-bottom:1px solid var(--rule);vertical-align:top}
 th{font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);font-weight:700}
@@ -535,6 +648,8 @@ footer .fine{font-size:.78rem;color:var(--faint)}
 .finder{display:flex;gap:.7rem;align-items:flex-end;flex-wrap:wrap}
 .finder label{font-size:.85rem;color:var(--soft);flex:1;min-width:11rem}
 .finder button{margin-top:0;height:2.6rem}
+.finder label.chk{display:flex;align-items:center;gap:.4rem;flex:0 0 auto;min-width:0;white-space:nowrap}
+.finder label.chk input{width:auto;margin:0}
 `;
 
 // ---------- write ----------
@@ -551,6 +666,7 @@ w("for-clinics.html", forClinicsPage()); count++;
 w("methodology.html", methodologyPage()); count++;
 w("texas-aba-access-report.html", reportPage()); count++;
 w("thanks.html", thanksPage()); count++;
+w("openings.html", openingsPage()); count++;
 w("404.html", notFoundPage()); count++;
 
 // compact license index for client-side lookup: [NAME, LIC, type, status, expires]
@@ -558,11 +674,13 @@ w("licenses.json", JSON.stringify(licenses.map((l) => [
   l.name, l.license_no, l.license_type?.includes("Assistant") ? "A" : "L", l.status === "active" ? "a" : "x", l.expires ?? "",
 ])));
 
-const urls = ["/", "/lookup.html", "/for-clinics.html", "/methodology.html", "/texas-aba-access-report.html"];
+const urls = ["/", "/openings.html", "/lookup.html", "/for-clinics.html", "/methodology.html", "/texas-aba-access-report.html"];
 for (const c of cities) {
   mkdirSync(new URL(`tx/${c.city_slug}/`, OUT), { recursive: true });
   w(`tx/${c.city_slug}/index.html`, cityPage(c)); count++;
   urls.push(`/tx/${c.city_slug}`);
+  w(`tx/${c.city_slug}/accepting-now.html`, cityPage(c, null, true)); count++;
+  urls.push(`/tx/${c.city_slug}/accepting-now.html`);
   if (c.n >= MIN_SITES_FOR_PAYER_PAGE) {
     for (const p of Object.keys(PAYERS)) {
       w(`tx/${c.city_slug}/accepts-${p}.html`, cityPage(c, p)); count++;

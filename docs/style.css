@@ -43,6 +43,7 @@ a.tile:hover{border-color:var(--accent)}a.tile span{color:var(--faint);font-size
 .chips{display:flex;flex-wrap:wrap;gap:.4rem;margin:.9rem 0}
 .chip{font-size:.82rem;text-decoration:none;background:var(--card);border:1px solid var(--rule);padding:.3rem .65rem;border-radius:99px;color:var(--soft)}
 .chip:hover{border-color:var(--accent);color:var(--accent-d)}
+.chip.open{border-color:var(--accent);color:var(--accent-d);font-weight:600;background:var(--accent-bg)}
 table{border-collapse:collapse;width:100%;font-size:.92rem}
 th,td{text-align:left;padding:.45rem .6rem;border-bottom:1px solid var(--rule);vertical-align:top}
 th{font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);font-weight:700}
@@ -72,3 +73,5 @@ footer .fine{font-size:.78rem;color:var(--faint)}
 .finder{display:flex;gap:.7rem;align-items:flex-end;flex-wrap:wrap}
 .finder label{font-size:.85rem;color:var(--soft);flex:1;min-width:11rem}
 .finder button{margin-top:0;height:2.6rem}
+.finder label.chk{display:flex;align-items:center;gap:.4rem;flex:0 0 auto;min-width:0;white-space:nowrap}
+.finder label.chk input{width:auto;margin:0}

@@ -12,7 +12,7 @@
     "pipeline": "npm run fetch:nppes && npm run fetch:tdlr && npm run etl && npm run build && npm run prospects",
     "refresh": "./scripts/refresh.sh",
     "serve": "node --run build && npx --yes serve docs -p 8430",
-    "ops": "node server.mjs"
+    "ops": "node ops.mjs"
   },
   "engines": { "node": ">=22.5" },
   "license": "UNLICENSED",
