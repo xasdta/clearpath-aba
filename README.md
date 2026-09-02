@@ -16,7 +16,7 @@ and confirms insurance and waitlists by phone. **When something isn't verified, 
 ## Commands
 
 ```sh
-npm run pipeline    # fetch public records → build DB → generate site → build prospect list
+npm run pipeline    # fetch public records → build directory.db → generate site → prospects
 npm run build       # regenerate docs/ from the existing DB
 npm run serve       # build + preview at localhost:8430
 npm run ops         # local verification console (record phone calls) — never deploy this

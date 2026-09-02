@@ -2,6 +2,7 @@ node_modules/
 .DS_Store
 logs/
 data/raw/
+data/*.db
 data/*.db-wal
 data/*.db-shm
 outreach/prospects.csv

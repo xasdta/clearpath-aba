@@ -25,36 +25,36 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 // Sites needing a call: no availability record, or one older than FRESH_DAYS,
 // and not deferred by a recent no-answer.
 const QUEUE_SQL = `
-  SELECT s.id site_id, s.address1, s.city, s.city_slug, s.zip, s.phone,
+  SELECT s.site_key, s.address1, s.city, s.city_slug, s.zip, s.phone,
          o.npi, o.name, o.ao_name, o.ao_license_status, o.ao_license_no,
-         (SELECT COUNT(*) FROM sites s2 WHERE s2.city_slug = s.city_slug) city_size,
+         (SELECT COUNT(*) FROM sites s2 WHERE s2.city_slug = s.city_slug AND s2.active=1) city_size,
          a.as_of last_asked, a.accepting last_accepting,
-         (SELECT COUNT(*) FROM call_log cl WHERE cl.site_id = s.id) attempts
+         (SELECT COUNT(*) FROM ops.call_log cl WHERE cl.site_key = s.site_key) attempts
   FROM sites s
   JOIN organizations o ON o.npi = s.org_npi
   LEFT JOIN (
-    SELECT site_id, as_of, accepting,
-           ROW_NUMBER() OVER (PARTITION BY site_id ORDER BY as_of DESC, id DESC) rn
-    FROM availability
-  ) a ON a.site_id = s.id AND a.rn = 1
-  WHERE s.phone IS NOT NULL AND s.phone != ''
+    SELECT site_key, as_of, accepting,
+           ROW_NUMBER() OVER (PARTITION BY site_key ORDER BY as_of DESC, id DESC) rn
+    FROM ops.availability
+  ) a ON a.site_key = s.site_key AND a.rn = 1
+  WHERE s.active = 1 AND o.active = 1 AND s.phone IS NOT NULL AND s.phone != ''
     AND (a.as_of IS NULL OR julianday('now') - julianday(a.as_of) > ${FRESH_DAYS})
     AND NOT EXISTS (
-      SELECT 1 FROM call_log cl WHERE cl.site_id = s.id
+      SELECT 1 FROM ops.call_log cl WHERE cl.site_key = s.site_key
         AND cl.next_attempt_after IS NOT NULL AND cl.next_attempt_after > date('now')
     )
     AND NOT EXISTS (
-      SELECT 1 FROM call_log cl WHERE cl.site_id = s.id AND cl.outcome IN ('bad_number','refused')
+      SELECT 1 FROM ops.call_log cl WHERE cl.site_key = s.site_key AND cl.outcome IN ('bad_number','refused')
     )
   ORDER BY city_size DESC, (o.ao_license_status = 'active') DESC, a.as_of IS NOT NULL, attempts, o.name
   LIMIT 1 OFFSET ?`;
 
 const stats = () => ({
-  total: db.prepare(`SELECT COUNT(*) c FROM sites WHERE phone IS NOT NULL AND phone != ''`).get().c,
-  fresh: db.prepare(`SELECT COUNT(DISTINCT site_id) c FROM availability WHERE julianday('now') - julianday(as_of) <= ${FRESH_DAYS}`).get().c,
-  open: db.prepare(`SELECT COUNT(*) c FROM (SELECT site_id, accepting, ROW_NUMBER() OVER (PARTITION BY site_id ORDER BY as_of DESC, id DESC) rn, as_of FROM availability) WHERE rn=1 AND accepting=1 AND julianday('now') - julianday(as_of) <= ${FRESH_DAYS}`).get().c,
-  callsToday: db.prepare(`SELECT COUNT(*) c FROM call_log WHERE date(created_at) = date('now')`).get().c,
-  reachedToday: db.prepare(`SELECT COUNT(*) c FROM call_log WHERE date(created_at) = date('now') AND outcome='reached'`).get().c,
+  total: db.prepare(`SELECT COUNT(*) c FROM sites WHERE active=1 AND phone IS NOT NULL AND phone != ''`).get().c,
+  fresh: db.prepare(`SELECT COUNT(DISTINCT site_key) c FROM ops.availability WHERE julianday('now') - julianday(as_of) <= ${FRESH_DAYS}`).get().c,
+  open: db.prepare(`SELECT COUNT(*) c FROM (SELECT site_key, accepting, ROW_NUMBER() OVER (PARTITION BY site_key ORDER BY as_of DESC, id DESC) rn, as_of FROM ops.availability) WHERE rn=1 AND accepting=1 AND julianday('now') - julianday(as_of) <= ${FRESH_DAYS}`).get().c,
+  callsToday: db.prepare(`SELECT COUNT(*) c FROM ops.call_log WHERE date(created_at) = date('now')`).get().c,
+  reachedToday: db.prepare(`SELECT COUNT(*) c FROM ops.call_log WHERE date(created_at) = date('now') AND outcome='reached'`).get().c,
 });
 
 const page = (body) => `<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -99,8 +99,8 @@ function consolePage(offset = 0) {
   </div>`;
   if (!c) return page(bar + `<div class="card"><h1>Queue is clear</h1><p class="meta">Every clinic with a phone number has been asked within the last ${FRESH_DAYS} days, or is deferred. Rebuild the site with <code>npm run build</code> to publish.</p></div>`);
 
-  const payers = db.prepare(`SELECT * FROM payer_acceptance WHERE site_id = ? ORDER BY payer`).all(c.site_id);
-  const prior = db.prepare(`SELECT * FROM call_log WHERE site_id = ? ORDER BY created_at DESC LIMIT 3`).all(c.site_id);
+  const payers = db.prepare(`SELECT * FROM ops.payer_acceptance WHERE site_key = ? ORDER BY payer`).all(c.site_key);
+  const prior = db.prepare(`SELECT * FROM ops.call_log WHERE site_key = ? ORDER BY created_at DESC LIMIT 3`).all(c.site_key);
   return page(bar + `
 <div class="card">
   <h1>${esc(c.name)}</h1>
@@ -117,7 +117,7 @@ function consolePage(offset = 0) {
 </div>
 
 <form class="card" method="POST" action="/record" id="f">
-  <input type="hidden" name="site_id" value="${c.site_id}">
+  <input type="hidden" name="site_key" value="${esc(c.site_key)}">
   <input type="hidden" name="offset" value="${offset}">
   <input type="hidden" name="outcome" id="outcome" value="reached">
 
@@ -174,8 +174,8 @@ document.addEventListener('keydown',function(e){
 }
 
 function inboxPage() {
-  const claims = db.prepare(`SELECT * FROM claims ORDER BY created_at DESC LIMIT 40`).all();
-  const leads = db.prepare(`SELECT l.*, o.name org FROM leads l JOIN sites s ON s.id=l.site_id JOIN organizations o ON o.npi=s.org_npi ORDER BY l.created_at DESC LIMIT 40`).all();
+  const claims = db.prepare(`SELECT * FROM ops.claims ORDER BY created_at DESC LIMIT 40`).all();
+  const leads = db.prepare(`SELECT l.*, o.name org FROM ops.leads l JOIN sites s ON s.site_key=l.site_key JOIN organizations o ON o.npi=s.org_npi ORDER BY l.created_at DESC LIMIT 40`).all();
   return page(`<p><a href="/">← Console</a></p>
 <div class="card"><h1>Claims (${claims.length})</h1><table><tr><th>When</th><th>NPI</th><th>Name</th><th>Email</th><th>License</th><th>Status</th></tr>
 ${claims.map((c) => `<tr><td>${esc((c.created_at ?? "").slice(0, 10))}</td><td>${esc(c.org_npi)}</td><td>${esc(c.name)}</td><td>${esc(c.email)}</td><td>${esc(c.license_no ?? "")}</td><td>${esc(c.status)}</td></tr>`).join("") || "<tr><td colspan=6>None yet</td></tr>"}</table></div>
@@ -194,7 +194,7 @@ createServer(async (req, res) => {
   try {
     if (req.method === "POST" && url.pathname === "/record") {
       const b = await readBody(req);
-      const siteId = +b.get("site_id");
+      const siteKey = b.get("site_key");
       const outcome = b.get("outcome") || "reached";
       const accepting = b.get("accepting");
       const offset = +(b.get("offset") ?? 0);
@@ -202,18 +202,18 @@ createServer(async (req, res) => {
       // Retry policy: unreachable numbers come back in 3 days, voicemail in 7,
       // bad numbers and refusals never (the queue filters them out entirely).
       const defer = { no_answer: 3, voicemail: 7, bad_number: 3650, refused: 3650 }[outcome];
-      db.prepare(`INSERT INTO call_log (site_id, outcome, notes, created_at, next_attempt_after) VALUES (?,?,?,?,?)`)
-        .run(siteId, outcome, b.get("notes") || null, nowIso(), defer ? addDays(defer) : null);
+      db.prepare(`INSERT INTO ops.call_log (site_key, outcome, notes, created_at, next_attempt_after) VALUES (?,?,?,?,?)`)
+        .run(siteKey, outcome, b.get("notes") || null, nowIso(), defer ? addDays(defer) : null);
 
       if (outcome === "reached" && accepting !== "" && accepting !== null) {
         const waitRaw = b.get("wait");
-        db.prepare(`INSERT INTO availability (site_id, accepting, est_wait_weeks, payer_scope, as_of, source, collected_by)
+        db.prepare(`INSERT INTO ops.availability (site_key, accepting, est_wait_weeks, payer_scope, as_of, source, collected_by)
                     VALUES (?,?,?,?,?,'phone','ops-console')`)
-          .run(siteId, +accepting, waitRaw ? +waitRaw : null, "all", today());
+          .run(siteKey, +accepting, waitRaw ? +waitRaw : null, "all", today());
         for (const k of Object.keys(PAYERS)) {
           if (b.get(`pay_${k}`) != null) {
-            db.prepare(`UPDATE payer_acceptance SET status='verified_yes', verified_at=?, verify_method='phone' WHERE site_id=? AND payer=?`)
-              .run(today(), siteId, k);
+            db.prepare(`UPDATE ops.payer_acceptance SET status='verified_yes', verified_at=?, verify_method='phone' WHERE site_key=? AND payer=?`)
+              .run(today(), siteKey, k);
           }
         }
       }

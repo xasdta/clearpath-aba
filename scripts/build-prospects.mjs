@@ -3,18 +3,19 @@
 // verified badge — the pitch is "your listing is live and verified; here's what it's doing."
 // Writes outreach/prospects.csv (gitignored — contains no secrets, but it's a working file).
 
-import { DatabaseSync } from "node:sqlite";
 import { writeFileSync, mkdirSync } from "node:fs";
+import { openDb } from "../lib/db.mjs";
 
 const root = new URL("../", import.meta.url);
-const db = new DatabaseSync(new URL("data/clearpath.db", root).pathname);
+const db = openDb();
 
 const rows = db.prepare(`
   SELECT o.npi, o.name, o.ao_name, o.ao_license_no, o.ao_license_expires,
          s.city, s.zip, s.phone,
-         (SELECT COUNT(*) FROM sites s2 WHERE s2.city_slug = s.city_slug) AS city_size
-  FROM organizations o JOIN sites s ON s.org_npi = o.npi
-  WHERE o.ao_license_status = 'active' AND s.phone IS NOT NULL AND s.phone != ''
+         (SELECT COUNT(*) FROM sites s2 WHERE s2.city_slug = s.city_slug AND s2.active=1) AS city_size
+  FROM organizations o JOIN sites s ON s.site_key = o.npi
+  WHERE o.active = 1 AND s.active = 1 AND o.ao_license_status = 'active'
+    AND s.phone IS NOT NULL AND s.phone != ''
   ORDER BY city_size DESC, o.name
 `).all();
 

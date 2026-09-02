@@ -1,5 +1,5 @@
 // Static site generator for ABA Openings -> docs/ (Vercel serves this directory).
-// Reads data/clearpath.db (built by etl.mjs) plus featured.json / claims.json / site.config.json.
+// Reads data/directory.db + data/ops.db (see lib/db.mjs) plus featured.json / claims.json / site.config.json.
 //
 // PUBLISHING RULE (important, enforced below):
 // We publish POSITIVE license verification only. A provider whose authorized official
@@ -8,15 +8,15 @@
 // expired or invalid on the strength of a heuristic name match.
 
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
 import { execSync } from "node:child_process";
+import { openDb } from "../lib/db.mjs";
 
 const root = new URL("../", import.meta.url);
 const OUT = new URL("docs/", root);
 const cfg = JSON.parse(readFileSync(new URL("site.config.json", root)));
 const featured = JSON.parse(readFileSync(new URL("data/featured.json", root))).providers ?? [];
 const claims = JSON.parse(readFileSync(new URL("data/claims.json", root))).providers ?? [];
-const db = new DatabaseSync(new URL("data/clearpath.db", root).pathname);
+const db = openDb();
 
 const today = new Date().toISOString().slice(0, 10);
 // Build provenance: lets anyone (including us) confirm which commit a live page came from.
@@ -41,21 +41,22 @@ const MIN_SITES_FOR_PAYER_PAGE = 4; // avoid thin programmatic pages
 
 // ---------- data ----------
 const orgs = db.prepare(`
-  SELECT o.*, s.id site_id, s.address1, s.city, s.city_slug, s.zip, s.phone
-  FROM organizations o JOIN sites s ON s.org_npi = o.npi ORDER BY o.name`).all();
+  SELECT o.*, s.site_key, s.address1, s.city, s.city_slug, s.zip, s.phone
+  FROM organizations o JOIN sites s ON s.site_key = o.npi
+  WHERE o.active = 1 AND s.active = 1 ORDER BY o.name`).all();
 const cities = db.prepare(`
-  SELECT city, city_slug, COUNT(*) n FROM sites WHERE city_slug != ''
+  SELECT city, city_slug, COUNT(*) n FROM sites WHERE city_slug != '' AND active = 1
   GROUP BY city_slug ORDER BY n DESC`).all();
 const licenses = db.prepare(`SELECT name, license_no, license_type, status, expires FROM clinicians ORDER BY name`).all();
 const activeLicenses = licenses.filter((l) => l.status === "active");
 const verifiedOrgs = orgs.filter((o) => o.ao_license_status === "active");
 const availByS = new Map();
-for (const a of db.prepare(`SELECT * FROM availability ORDER BY as_of DESC`).all())
-  if (!availByS.has(a.site_id)) availByS.set(a.site_id, a);
+for (const a of db.prepare(`SELECT * FROM ops.availability ORDER BY as_of DESC, id DESC`).all())
+  if (!availByS.has(a.site_key)) availByS.set(a.site_key, a);
 const payersBySite = new Map();
-for (const p of db.prepare(`SELECT * FROM payer_acceptance`).all()) {
-  if (!payersBySite.has(p.site_id)) payersBySite.set(p.site_id, []);
-  payersBySite.get(p.site_id).push(p);
+for (const p of db.prepare(`SELECT * FROM ops.payer_acceptance`).all()) {
+  if (!payersBySite.has(p.site_key)) payersBySite.set(p.site_key, []);
+  payersBySite.get(p.site_key).push(p);
 }
 
 const daysAgo = (iso) => Math.floor((Date.now() - new Date(iso + "T00:00:00Z")) / 86400000);
@@ -68,8 +69,8 @@ const ago = (d) => (d === 0 ? "today" : d === 1 ? "yesterday" : d < 14 ? `${d} d
 //   aging (31-90d) — shown with an explicit "last confirmed" caveat, not countable
 //   stale (>90d)   — treated as unknown; we ask again rather than assert
 //   none           — never collected
-function availState(siteId) {
-  const a = availByS.get(siteId);
+function availState(siteKey) {
+  const a = availByS.get(siteKey);
   if (!a) return { tier: "none", cls: "mut", label: "Openings not yet confirmed", accepting: false, countable: false, days: null };
   const d = daysAgo(a.as_of);
   const wait = a.est_wait_weeks != null ? ` — about ${a.est_wait_weeks} week wait` : "";
@@ -92,7 +93,7 @@ function availState(siteId) {
 // Sort key for "who can take my child": fresh openings first, then aging openings,
 // then verified-but-unknown, then everything else; ties broken by recency.
 function openingsRank(o) {
-  const av = availState(o.site_id);
+  const av = availState(o.site_key);
   const tierScore = av.accepting ? (av.tier === "fresh" ? 0 : 1) : av.tier === "none" ? 3 : av.tier === "stale" ? 4 : 5;
   return [tierScore, o.ao_license_status === "active" ? 0 : 1, av.days ?? 999];
 }
@@ -102,7 +103,7 @@ function licBadge(o) {
     ? `<span class="badge ok" title="Matched to an active Texas license on ${esc(o.ao_verified_at)}">License verified</span>`
     : `<span class="badge mut">License not confirmed</span>`;
 }
-const payerStatus = (siteId, payer) => (payersBySite.get(siteId) ?? []).find((p) => p.payer === payer);
+const payerStatus = (siteKey, payer) => (payersBySite.get(siteKey) ?? []).find((p) => p.payer === payer);
 
 // ---------- layout ----------
 function layout(title, body, { desc = "", canonical = "", jsonld = null, depth = 0 } = {}) {
@@ -149,8 +150,8 @@ function formOpen(subject, redirectDepth = 0) {
 // ---------- pages ----------
 function homePage() {
   const topCities = cities.slice(0, 18);
-  const openCount = orgs.filter((o) => availState(o.site_id).countable).length;
-  const askedCount = orgs.filter((o) => availState(o.site_id).tier !== "none").length;
+  const openCount = orgs.filter((o) => availState(o.site_key).countable).length;
+  const askedCount = orgs.filter((o) => availState(o.site_key).tier !== "none").length;
   const jsonld = {
     "@context": "https://schema.org", "@type": "WebSite", name: cfg.siteName,
     url: base || undefined, description: cfg.tagline,
@@ -180,7 +181,7 @@ function homePage() {
 
 <h2>Browse by city</h2>
 <div class="grid">${topCities.map((c) => {
-    const n = orgs.filter((o) => o.city_slug === c.city_slug && availState(o.site_id).countable).length;
+    const n = orgs.filter((o) => o.city_slug === c.city_slug && availState(o.site_key).countable).length;
     return `<a class="tile card" href="tx/${c.city_slug}/index.html"><b>${esc(c.city)}</b><span>${c.n} provider${c.n === 1 ? "" : "s"}${n ? ` · ${n} accepting` : ""}</span></a>`;
   }).join("")}</div>
 
@@ -206,13 +207,13 @@ function cityPage(c, payer = null, openOnly = false) {
   const sites = orgs.filter((o) => o.city_slug === c.city_slug);
   const feats = (featuredByCity.get(c.city.toLowerCase()) ?? []).slice(0, cfg.featuredSlotsPerCity);
   const ranked = [...sites]
-    .filter((o) => (payer ? payerStatus(o.site_id, payer)?.status !== "verified_no" : true))
-    .filter((o) => (openOnly ? availState(o.site_id).accepting : true))
+    .filter((o) => (payer ? payerStatus(o.site_key, payer)?.status !== "verified_no" : true))
+    .filter((o) => (openOnly ? availState(o.site_key).accepting : true))
     .sort((a, b) => {
       const [ra, rb] = [openingsRank(a), openingsRank(b)];
       return ra[0] - rb[0] || ra[1] - rb[1] || ra[2] - rb[2] || a.name.localeCompare(b.name);
     });
-  const openCount = sites.filter((o) => availState(o.site_id).countable).length;
+  const openCount = sites.filter((o) => availState(o.site_key).countable).length;
 
   const title = openOnly
     ? `ABA therapy in ${c.city}, TX accepting new clients`
@@ -239,8 +240,8 @@ ${feats.length ? `<h2 class="fh">Featured providers</h2>
 
 <h2>${openOnly ? "Confirmed openings" : `All providers${payer ? ` accepting ${esc(PAYERS[payer])}` : ""}`}</h2>
 ${ranked.map((o) => {
-    const av = availState(o.site_id);
-    const p = payer ? payerStatus(o.site_id, payer) : null;
+    const av = availState(o.site_key);
+    const p = payer ? payerStatus(o.site_key, payer) : null;
     const claim = claimBy.get(o.npi);
     return `<div class="card row">
   <div class="row-main">
@@ -284,9 +285,9 @@ ${formOpen(`Openings alert signup${cityLabel ? ` — ${cityLabel}` : ""}`, depth
 }
 
 function providerPage(o) {
-  const av = availState(o.site_id);
+  const av = availState(o.site_key);
   const claim = claimBy.get(o.npi);
-  const pays = payersBySite.get(o.site_id) ?? [];
+  const pays = payersBySite.get(o.site_key) ?? [];
   const jsonld = {
     "@context": "https://schema.org", "@type": "MedicalBusiness",
     name: o.name, telephone: claim?.phone ?? o.phone ?? undefined, url: claim?.website ?? undefined,
@@ -520,7 +521,7 @@ ${top.map((c) => `<tr><td><a href="tx/${c.city_slug}/index.html">${esc(c.city)}<
 
 // Statewide openings page — the shareable asset for parent groups and the physician mailer.
 function openingsPage() {
-  const open = orgs.map((o) => ({ o, av: availState(o.site_id) }))
+  const open = orgs.map((o) => ({ o, av: availState(o.site_key) }))
     .filter((r) => r.av.accepting)
     .sort((a, b) => (a.av.days ?? 999) - (b.av.days ?? 999));
   const byCity = new Map();
@@ -528,7 +529,7 @@ function openingsPage() {
     if (!byCity.has(r.o.city)) byCity.set(r.o.city, []);
     byCity.get(r.o.city).push(r);
   }
-  const checkedCount = orgs.filter((o) => availState(o.site_id).tier !== "none").length;
+  const checkedCount = orgs.filter((o) => availState(o.site_key).tier !== "none").length;
   const body = `
 <h1>Texas ABA clinics accepting new clients</h1>
 <p class="lede">Every clinic below told us directly that they can take new clients, and every entry is dated. We re-ask every 30 days and retire any answer we cannot re-confirm — an old "yes" is worse than no answer at all when you are the one making the calls.</p>
