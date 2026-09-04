@@ -83,3 +83,64 @@ rather than shipping broken UI:
 2. Individual NPI-1 ingestion + clinician↔org rollup to raise the 33.9% match rate.
 3. Set Stripe link + Web3Forms key; connect domain; submit sitemap to Search Console.
 4. Physician-referral mailer (the 42% intake channel) per `outreach/emails.md`.
+
+## Automation
+
+Five jobs run on a schedule so the openings data maintains itself instead of depending on
+anyone remembering. Install them with `./scripts/install-launchd.sh` (macOS launchd — chosen
+over cron because it re-runs missed jobs after the Mac wakes).
+
+| Job | Schedule | What it does |
+|---|---|---|
+| `ask-clinics` | daily 09:05 | Emails clinics whose status is older than 30 days: "accepting? [Yes] [Full]" — one click, no login |
+| `family-alerts` | daily 09:05 | Emails waiting families when a clinic near them confirms an opening |
+| `license-expiry` | daily 09:05 | Warns a clinic 30 days before the licence behind its verified badge lapses |
+| `health-check` | daily 09:05 | Flags collapsed record counts, job failures, mail failures |
+| `owner-digest` | Mon 08:00 | Weekly summary: openings, calls, inquiries, claims, subscribers |
+| `refresh.sh` | Mon 06:00 | Re-pull public records → rebuild → commit → push (Vercel redeploys) |
+
+Run any job by hand: `node jobs/run.mjs <name>` (or `all`).
+
+### Safety properties
+
+- **Dry run by default.** Nothing sends until `MAIL_PROVIDER` and `MAIL_API_KEY` are set;
+  until then every message is written to `logs/outbox.log`. The failure mode of a half-built
+  mailer is emailing 1,379 real businesses by accident, so the safe state is the default.
+- **Idempotent.** Every send carries a dedupe key recorded in `ops.mail_log`; re-running a job
+  after a crash sends nothing twice. Verified by test.
+- **Thundering-herd capped.** A newly confirmed opening notifies at most 5 families (longest
+  waiting first), each family hears about a given clinic once ever, and no family gets more
+  than one alert a week. A clinic with two slots must not receive 400 phone calls.
+- **Suppression is absolute.** An unsubscribe or hard bounce is honoured everywhere, checked
+  both in the job query and again inside the mailer. Verified by test.
+- **Send ceiling.** `MAIL_MAX_PER_RUN` (default 100) caps any single run, so a logic bug costs
+  a handful of emails rather than a domain reputation.
+- **Every run is recorded** in `ops.job_runs`; failures surface in the weekly digest and the
+  health check rather than disappearing.
+
+### One-click responses
+
+Clinic emails contain signed, expiring tokens (`lib/tokens.mjs`, HMAC-SHA256, 45-day TTL,
+constant-time comparison). The link lands on `/respond.html`, which confirms the answer to the
+clinic and files the response. Apply it from the ops console at `/apply` — paste the token and
+the signature is verified before anything is written, so a forged or expired link changes
+nothing. Tampered, malformed and expired tokens are all rejected (verified by test).
+
+### Enabling real sending
+
+```sh
+export MAIL_PROVIDER=resend        # or postmark
+export MAIL_API_KEY=...            # provider key
+export MAIL_FROM="ABA Openings <hello@abaopenings.com>"
+node jobs/run.mjs ask-clinics      # sends for real
+```
+
+Add the same variables to the launchd plists (`EnvironmentVariables`) for scheduled runs.
+Sending requires a verified domain at the provider (SPF/DKIM) — cold domains land in spam.
+
+### Where clinic email addresses come from
+
+`ops.clinic_contacts`, populated when a clinic claims its listing or when you capture an
+address during a verification call (the ops console asks for it). NPPES does not publish
+emails and we do not scrape or guess them, so the self-report loop grows only as fast as you
+collect real contacts — phone calls first, automation second.

@@ -10,6 +10,8 @@
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { openDb, today, nowIso, addDays } from "./lib/db.mjs";
+import { verifyToken } from "./lib/tokens.mjs";
+import { suppress } from "./lib/mail.mjs";
 
 const db = openDb();
 const cfg = JSON.parse(readFileSync(new URL("./site.config.json", import.meta.url)));
@@ -95,7 +97,7 @@ function consolePage(offset = 0) {
     <div><b>${s.total - s.fresh}</b>need a call</div>
     <div><b>${s.callsToday}</b>calls today</div>
     <div><b>${s.reachedToday}</b>reached today</div>
-    <div style="margin-left:auto"><a href="/inbox">Claims &amp; leads →</a></div>
+    <div style="margin-left:auto"><a href="/apply">Apply response</a> · <a href="/inbox">Claims &amp; leads →</a></div>
   </div>`;
   if (!c) return page(bar + `<div class="card"><h1>Queue is clear</h1><p class="meta">Every clinic with a phone number has been asked within the last ${FRESH_DAYS} days, or is deferred. Rebuild the site with <code>npm run build</code> to publish.</p></div>`);
 
@@ -140,6 +142,10 @@ function consolePage(offset = 0) {
     <div><label>Estimated wait (weeks)<input name="wait" id="wait" type="number" min="0" max="200" placeholder="e.g. 8"></label></div>
     <div><label>Notes<input name="notes" placeholder="optional"></label></div>
   </div>
+  <div class="row">
+    <div><label>Intake email <span style="color:var(--faint)">(unlocks the monthly auto-ask)</span><input name="email" type="email" placeholder="intake@clinic.com"></label></div>
+    <div></div>
+  </div>
 
   <h2>Insurance accepted <span style="font-weight:400;color:var(--faint)">(check what they confirm)</span></h2>
   <div class="pay">${Object.entries(PAYERS).map(([k, v]) => {
@@ -173,6 +179,25 @@ document.addEventListener('keydown',function(e){
 </script>`);
 }
 
+function applyPage(msg = "") {
+  const recent = db.prepare(`SELECT a.*, o.name FROM ops.availability a
+    JOIN organizations o ON o.npi = a.site_key WHERE a.source='self_report'
+    ORDER BY a.id DESC LIMIT 10`).all();
+  return page(`<p><a href="/">← Console</a></p>
+<div class="card"><h1>Apply a clinic response</h1>
+<p class="meta">When a clinic clicks Yes or No in an email, the response arrives in your inbox with a token.
+Paste it here to apply it. The signature is verified before anything is written, so a forged or
+expired link cannot change a listing.</p>
+${msg ? `<p class="badge ${msg.startsWith("Applied") ? "ok" : "bad"}">${esc(msg)}</p>` : ""}
+<form method="POST" action="/apply">
+  <label>Token from the email<input name="token" required placeholder="eyJ...  .  abc..."></label>
+  <label>Estimated wait in weeks (optional)<input name="wait" type="number" min="0" max="200"></label>
+  <div class="keys"><button class="primary" type="submit">Verify &amp; apply</button></div>
+</form></div>
+<div class="card"><h2>Recent self-reported responses</h2><table><tr><th>When</th><th>Clinic</th><th>Answer</th></tr>
+${recent.map((r) => `<tr><td>${esc(r.as_of)}</td><td>${esc(r.name)}</td><td>${r.accepting ? "accepting" : "full"}</td></tr>`).join("") || "<tr><td colspan=3>None yet</td></tr>"}</table></div>`);
+}
+
 function inboxPage() {
   const claims = db.prepare(`SELECT * FROM ops.claims ORDER BY created_at DESC LIMIT 40`).all();
   const leads = db.prepare(`SELECT l.*, o.name org FROM ops.leads l JOIN sites s ON s.site_key=l.site_key JOIN organizations o ON o.npi=s.org_npi ORDER BY l.created_at DESC LIMIT 40`).all();
@@ -192,6 +217,19 @@ const send = (res, html, code = 200) => { res.writeHead(code, { "content-type": 
 createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   try {
+    if (req.method === "POST" && url.pathname === "/apply") {
+      const b = await readBody(req);
+      const v = verifyToken((b.get("token") || "").trim());
+      if (!v.ok) return send(res, applyPage(`Rejected: ${v.reason}`));
+      const site = db.prepare(`SELECT s.site_key, o.name FROM sites s JOIN organizations o ON o.npi = s.org_npi WHERE s.site_key = ?`).get(v.siteKey);
+      if (!site) return send(res, applyPage("Rejected: unknown clinic"));
+      const wait = b.get("wait");
+      db.prepare(`INSERT INTO ops.availability (site_key, accepting, est_wait_weeks, payer_scope, as_of, source, collected_by)
+                  VALUES (?,?,?,'all',?,'self_report','email-token')`)
+        .run(v.siteKey, v.action === "accepting" ? 1 : 0, wait ? +wait : null, today());
+      return send(res, applyPage(`Applied: ${site.name} marked ${v.action === "accepting" ? "accepting" : "full"}`));
+    }
+
     if (req.method === "POST" && url.pathname === "/record") {
       const b = await readBody(req);
       const siteKey = b.get("site_key");
@@ -210,6 +248,11 @@ createServer(async (req, res) => {
         db.prepare(`INSERT INTO ops.availability (site_key, accepting, est_wait_weeks, payer_scope, as_of, source, collected_by)
                     VALUES (?,?,?,?,?,'phone','ops-console')`)
           .run(siteKey, +accepting, waitRaw ? +waitRaw : null, "all", today());
+        const email = (b.get("email") || "").trim();
+        if (email.includes("@")) {
+          db.prepare(`INSERT INTO ops.clinic_contacts (site_key, email, source, created_at) VALUES (?,?,'phone',?)
+                      ON CONFLICT(site_key) DO UPDATE SET email=excluded.email`).run(siteKey, email.toLowerCase(), nowIso());
+        }
         for (const k of Object.keys(PAYERS)) {
           if (b.get(`pay_${k}`) != null) {
             db.prepare(`UPDATE ops.payer_acceptance SET status='verified_yes', verified_at=?, verify_method='phone' WHERE site_key=? AND payer=?`)
@@ -221,6 +264,7 @@ createServer(async (req, res) => {
       res.writeHead(303, { location: outcome === "reached" ? "/" : `/?offset=${offset}` });
       return res.end();
     }
+    if (url.pathname === "/apply") return send(res, applyPage());
     if (url.pathname === "/inbox") return send(res, inboxPage());
     if (url.pathname === "/") return send(res, consolePage(+(url.searchParams.get("offset") ?? 0)));
     return send(res, page(`<div class="card"><h1>Not found</h1><p><a href="/">Console</a></p></div>`), 404);

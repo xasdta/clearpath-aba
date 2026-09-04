@@ -563,6 +563,67 @@ ${alertSignup(null, null, 0)}
   });
 }
 
+
+// One-click response landing page for clinic emails. The token carries the clinic and the
+// answer; this page confirms it to the clinic and files the response. It deliberately does no
+// verification client-side — the signature is checked when the response is applied, so a
+// forged link cannot change anything, it just produces a response we reject.
+function respondPage() {
+  const body = `
+<h1 id="hd">Recording your answer…</h1>
+<p class="lede" id="msg">One moment.</p>
+<div class="card" id="detail" hidden>
+  <p><b>Thank you</b> — your listing will show this within a day, stamped with today's date.</p>
+  <p class="src">We ask again in about a month. Families filter for clinics that can actually take a new client, so an up-to-date answer means fewer wasted calls for your intake team — and no calls at all when you're full.</p>
+  <p><a class="btn" href="index.html">See the directory</a></p>
+</div>
+<div class="card" id="oops" hidden>
+  <p><b>That link didn't work.</b> It may have expired, or been copied incompletely.</p>
+  <p>Email <a href="mailto:${esc(cfg.correctionsEmail)}">${esc(cfg.correctionsEmail)}</a> with your clinic name and whether you're accepting clients, and we'll update it by hand.</p>
+</div>
+${cfg.web3formsKey ? `<form id="f" style="display:none" action="https://api.web3forms.com/submit" method="POST">
+  <input type="hidden" name="access_key" value="${esc(cfg.web3formsKey)}">
+  <input type="hidden" name="subject" value="CLINIC RESPONSE">
+  <input type="hidden" name="token" id="tok">
+  <input type="hidden" name="answer" id="ans">
+</form>` : ""}
+<script>
+(function(){
+  var q=new URLSearchParams(location.search), t=q.get('t')||'';
+  var parts=t.split('.'), action='';
+  try{ action=JSON.parse(atob(parts[0].replace(/-/g,'+').replace(/_/g,'/'))).a||''; }catch(e){}
+  if(!t||parts.length!==2||!action){
+    document.getElementById('hd').textContent='We could not read that link';
+    document.getElementById('msg').textContent='';
+    document.getElementById('oops').hidden=false; return;
+  }
+  var open = action==='accepting';
+  document.getElementById('hd').textContent = open ? 'Marked as accepting new clients' : 'Marked as full';
+  document.getElementById('msg').textContent = open
+    ? 'Families searching your city will now see that you have room.'
+    : 'We will show your waitlist as closed, so families do not call for a slot you cannot fill.';
+  document.getElementById('detail').hidden=false;
+  var f=document.getElementById('f');
+  if(f){ document.getElementById('tok').value=t; document.getElementById('ans').value=action;
+    fetch(f.action,{method:'POST',body:new FormData(f)}).catch(function(){}); }
+})();
+</script>`;
+  return layout(`Thanks — response recorded | ${cfg.siteName}`, body, { canonical: "/respond.html" });
+}
+
+function unsubscribePage() {
+  const body = `
+<h1>Unsubscribe</h1>
+<p class="lede">Enter the address that receives the alerts and we will stop them. No confirmation email, no "are you sure" — one submit and it is done.</p>
+${formOpen("UNSUBSCRIBE")}
+  <label>Email address<input name="email" type="email" id="e" required></label>
+  <button>Stop sending me alerts</button>
+  <div class="src">We keep the address only on a suppression list, so nothing starts it again by accident.</div>
+</form>
+<script>var e=new URLSearchParams(location.search).get('e'); if(e){document.getElementById('e').value=e;}</script>`;
+  return layout(`Unsubscribe | ${cfg.siteName}`, body, { canonical: "/unsubscribe.html" });
+}
+
 const thanksPage = () => layout(`Thank you | ${cfg.siteName}`, `
 <h1>Got it — thank you</h1>
 <p class="lede">Your message is on its way. If you asked a provider about availability, they'll reach out directly. If you claimed a listing, we'll verify your license and call the clinic's number on public record, usually within two business days.</p>
@@ -668,6 +729,8 @@ w("methodology.html", methodologyPage()); count++;
 w("texas-aba-access-report.html", reportPage()); count++;
 w("thanks.html", thanksPage()); count++;
 w("openings.html", openingsPage()); count++;
+w("respond.html", respondPage()); count++;
+w("unsubscribe.html", unsubscribePage()); count++;
 w("404.html", notFoundPage()); count++;
 
 // compact license index for client-side lookup: [NAME, LIC, type, status, expires]
