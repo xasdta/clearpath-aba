@@ -376,15 +376,14 @@ ${o.ao_license_status === "active" ? `
 </div>
 
 <h2>Insurance</h2>
-${pays.some((p) => p.status !== "unverified") ? `<div class="card"><table>
+<div class="card"><table>
 <tr><th>Plan</th><th>Status</th></tr>
 ${pays.map((p) => `<tr><td>${esc(PAYERS[p.payer] ?? p.payer)}</td><td>${
     p.status === "verified_yes" ? `<span class="badge ok">Accepted — confirmed with the clinic ${esc(p.verified_at)}</span>`
     : p.status === "verified_no" ? `<span class="badge bad">Not accepted (confirmed ${esc(p.verified_at)})</span>`
     : `<span class="badge warn">Not yet verified</span>`}</td></tr>`).join("")}
 </table>
-<div class="src">We mark a plan accepted only after confirming it with the clinic directly. Always re-confirm coverage before your first appointment — plan networks change.</div></div>` : `<div class="card"><p>We haven't confirmed which plans ${esc(o.name)} accepts yet. We only mark a plan accepted after confirming it with the clinic directly — ask when you call.</p>
-<div class="chips">${Object.values(PAYERS).map((v) => `<span class="chip">${esc(v)}</span>`).join("")}</div></div>`}
+<div class="src">We mark a plan accepted only after confirming it with the clinic directly. Always re-confirm coverage before your first appointment — plan networks change.</div></div>
 
 <h2 id="ask">Ask this provider about availability</h2>
 ${formOpen("inquiry")}
