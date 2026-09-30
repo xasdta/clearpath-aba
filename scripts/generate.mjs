@@ -523,9 +523,9 @@ ${formOpen("inquiry")}
   <input type="hidden" name="npi" value="${esc(o.npi)}">
   <input type="hidden" name="provider" value="${esc(o.name)}">
   <div class="f2"><label>Your name<input name="name" required></label><label>Email or phone<input name="contact" required></label></div>
-  <div class="f2"><label>Insurance<select name="insurance">${Object.values(PAYERS).map((v) => `<option>${esc(v)}</option>`).join("")}<option>Other / self-pay</option></select></label>
-  <label>Child's age<select name="child_age"><option>0-3</option><option>4-6</option><option>7-12</option><option>13+</option></select></label></div>
-  <label>Anything else<textarea name="message" rows="3"></textarea></label>
+  <div class="f2"><label>Insurance<select name="insurance"><option value="" selected>Not sure yet</option>${Object.values(PAYERS).map((v) => `<option>${esc(v)}</option>`).join("")}<option>Other / self-pay</option></select></label>
+  <label>Child's age<select name="child_age"><option value="" selected>Prefer not to say</option><option>0-3</option><option>4-6</option><option>7-12</option><option>13+</option></select></label></div>
+  <label>Anything else<textarea name="message" rows="3" maxlength="2000"></textarea></label>
   <button>Send inquiry</button>
   <div class="src">Free for families. We pass your message to the provider — we never sell family contact information.</div>
 </form>
