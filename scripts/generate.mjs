@@ -115,6 +115,28 @@ function providerRow(o, up, extra = "") {
 }
 const providerList = (rows, up, extra = () => "") => `<div class="list">${rows.map((o) => providerRow(o, up, extra(o))).join("")}</div>`;
 
+// A featured (paid) card. Website only if it is a plain http(s) URL, and marked sponsored so
+// search engines don't read it as an editorial link.
+const featuredBy = new Map(featured.map((f) => [f.npi, f]));
+const httpUrl = (u) => (/^https?:\/\/[^\s"'<>]+$/i.test(String(u || "")) ? u : null);
+function featuredCard(f, up) {
+  const o = orgs.find((x) => x.npi === f.npi);
+  if (!o) return "";
+  const av = availState(o.site_key);
+  const phone = f.phone ?? o.phone;
+  const site = httpUrl(f.website);
+  return `<div class="card feat">
+  <div class="feat-top"><span class="badge feat-b">Featured</span>${licBadge(o)}</div>
+  <a class="feat-name" href="${up}providers/${o.npi}.html">${esc(o.name)}</a>
+  ${f.blurb ? `<p class="feat-blurb">${esc(f.blurb)}</p>` : ""}
+  <div class="feat-status"><span class="badge ${av.cls}">${esc(av.label)}</span></div>
+  <div class="feat-actions">
+    ${phone ? `<a class="btn" href="tel:${esc(String(phone).replace(/[^0-9+]/g, ""))}">Call ${esc(phone)}</a>` : ""}
+    ${site ? `<a class="btn ghost" href="${esc(site)}" rel="sponsored nofollow noopener" target="_blank">Website ↗</a>` : ""}
+  </div>
+</div>`;
+}
+
 // POSITIVE-ONLY license rendering (see header rule)
 function licBadge(o) {
   return o.ao_license_status === "active"
@@ -134,7 +156,7 @@ function layout(title, body, { desc = "", canonical = "", jsonld = null, depth =
 ${base && canonical ? `<link rel="canonical" href="${base}${canonical}">` : ""}
 <meta name="build" content="${esc(buildSha)} ${esc(buildStamp)}">
 <meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
-<link rel="stylesheet" href="${up}style.css?v=5">
+<link rel="stylesheet" href="${up}style.css?v=6">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><text y=%2226%22 font-size=%2228%22>%E2%9C%93</text></svg>">
 ${jsonld ? `<script type="application/ld+json">${JSON.stringify(jsonld)}</script>` : ""}
 ${cfg.vercelAnalytics ? `<script defer src="/_vercel/insights/script.js"></script>` : ""}
@@ -360,7 +382,15 @@ ${alertSignup(null, null, 0)}
 
 function cityPage(c, payer = null, openOnly = false) {
   const sites = orgs.filter((o) => o.city_slug === c.city_slug);
-  const feats = (featuredByCity.get(c.city.toLowerCase()) ?? []).slice(0, cfg.featuredSlotsPerCity);
+  // A paid card must never contradict the page it sits on: not on an insurance page for a plan
+  // the clinic has said it doesn't take, and not on "accepting now" unless it currently is.
+  const feats = (featuredByCity.get(c.city.toLowerCase()) ?? [])
+    .filter((f) => {
+      if (payer && payerStatus(f.npi, payer)?.status === "verified_no") return false;
+      if (openOnly && !availState(f.npi).accepting) return false;
+      return true;
+    })
+    .slice(0, cfg.featuredSlotsPerCity);
   const ranked = [...sites]
     .filter((o) => (payer ? payerStatus(o.site_key, payer)?.status !== "verified_no" : true))
     .filter((o) => (openOnly ? availState(o.site_key).accepting : true))
@@ -386,12 +416,8 @@ function cityPage(c, payer = null, openOnly = false) {
 
 ${openOnly ? "" : `<div class="chips"><a class="chip open" href="accepting-now.html">✓ Accepting new clients${openCount ? ` (${openCount})` : ""}</a>${payer ? "" : Object.entries(PAYERS).map(([k, v]) => `<a class="chip" href="accepts-${k}.html">Accepts ${esc(v)}</a>`).join("")}</div>`}
 
-${feats.length ? `<h2 class="fh">Featured providers</h2>
-<div class="grid">${feats.map((f) => {
-    const o = orgs.find((x) => x.npi === f.npi);
-    return o ? `<div class="card feat"><span class="badge feat-b">Featured</span><a href="../../providers/${o.npi}.html"><b>${esc(o.name)}</b></a>
-      <p>${esc(f.blurb ?? "")}</p><div class="src">${esc(o.city)}${f.phone ? " · " + esc(f.phone) : ""}</div></div>` : "";
-  }).join("")}</div>` : ""}
+${feats.length ? `<h2 class="fh">Featured providers <span class="src">· paid placement, always labeled</span></h2>
+<div class="grid feats">${feats.map((f) => featuredCard(f, "../../")).join("")}</div>` : ""}
 
 <h2>${openOnly ? "Confirmed openings" : `All providers${payer ? ` accepting ${esc(PAYERS[payer])}` : ""}`}</h2>
 ${providerList(ranked, "../../", (o) => {
@@ -450,10 +476,12 @@ function providerPage(o) {
   <div class="summary-status">
     <span class="label">Taking new clients?</span>
     <span class="status ${av.cls}">${esc(av.label)}</span>
-    <div class="badges">${licBadge(o)}${claim ? `<span class="badge ok">Claimed profile</span>` : `<span class="badge mut">Unclaimed</span>`}</div>
+    <div class="badges">${featuredBy.has(o.npi) ? `<span class="badge feat-b">Featured</span>` : ""}${licBadge(o)}${claim ? `<span class="badge ok">Claimed profile</span>` : `<span class="badge mut">Unclaimed</span>`}</div>
+    ${featuredBy.get(o.npi)?.blurb ? `<p class="feat-blurb">${esc(featuredBy.get(o.npi).blurb)}</p>` : ""}
   </div>
   <div class="summary-actions">
     ${(claim?.phone ?? o.phone) ? `<a class="btn" href="tel:${esc(String(claim?.phone ?? o.phone).replace(/[^0-9+]/g, ""))}">Call ${esc(claim?.phone ?? o.phone)}</a>` : ""}
+    ${httpUrl(featuredBy.get(o.npi)?.website) ? `<a class="btn ghost" href="${esc(featuredBy.get(o.npi).website)}" rel="sponsored nofollow noopener" target="_blank">Website ↗</a>` : ""}
     <a class="btn ghost" href="#ask">Ask about availability</a>
   </div>
 </div>
@@ -969,7 +997,13 @@ button:hover,.btn:hover{background:var(--accent-d)}
 .cta-band{display:flex;gap:1rem;align-items:center;justify-content:space-between;flex-wrap:wrap;border-color:var(--accent);background:var(--accent-bg)}
 .cta-band .btn{margin-top:0;white-space:nowrap}
 .price{font-size:1.05rem}.price b{font-size:1.5rem;color:var(--accent)}
-.fh{margin-bottom:.4rem}.feat{border-color:var(--feat)}
+.fh{margin-bottom:.4rem}.fh .src{font-weight:400;font-size:.8rem}
+.feat{border-color:var(--feat);background:linear-gradient(180deg,var(--feat-bg),var(--card) 55%);display:flex;flex-direction:column;gap:.45rem}
+.feat-top{display:flex;flex-wrap:wrap}.feat-top .badge{margin:0 .3rem 0 0}
+.feat-name{font-size:1.1rem;font-weight:700;text-decoration:none;color:var(--ink);line-height:1.3}.feat-name:hover{color:var(--accent-d)}
+.feat-blurb{margin:0;color:var(--soft)}.feat-status .badge{margin:0}
+.feat-actions{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:auto;padding-top:.3rem}.feat-actions .btn{margin-top:0;padding:.45rem .85rem;font-size:.92rem}
+.grid.feats{grid-template-columns:repeat(auto-fill,minmax(min(18rem,100%),1fr))}
 .claimed{border-color:var(--accent)}
 .notice{background:var(--warn-bg);border:1px solid var(--rule);border-radius:8px;padding:.7rem .9rem;font-size:.9rem}
 .chart{display:flex;gap:.4rem;align-items:flex-end;height:11rem;padding-top:1rem}

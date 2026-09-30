@@ -17,6 +17,8 @@ const cfg = JSON.parse(readFileSync(new URL("../site.config.json", import.meta.u
 const SITE = cfg.domain ? `https://${cfg.domain}` : "http://localhost:8430";
 const FRESH_DAYS = 30;
 const ASK_AFTER_DAYS = 30;      // re-ask a clinic once its answer is this old
+const ASK_AFTER_DAYS_FEATURED = 14;  // "priority re-verification" promised to featured clinics
+const featuredNpis = new Set((JSON.parse(readFileSync(new URL("../data/featured.json", import.meta.url))).providers ?? []).map((f) => f.npi));
 const ALERT_CAP_PER_SITE = 5;   // families told about one opening — see thundering herd note
 const ALERT_COOLDOWN_DAYS = 7;  // max one alert per family per week
 
@@ -45,14 +47,17 @@ async function askClinics() {
     WHERE NOT EXISTS (SELECT 1 FROM ops.suppressions x WHERE x.email = c.email)
       AND (
         NOT EXISTS (SELECT 1 FROM ops.availability a WHERE a.site_key = c.site_key)
-        OR (SELECT MAX(as_of) FROM ops.availability a WHERE a.site_key = c.site_key) <= date('now', '-${ASK_AFTER_DAYS} days')
+        OR (SELECT MAX(as_of) FROM ops.availability a WHERE a.site_key = c.site_key)
+           <= date('now', '-' || (CASE WHEN c.site_key IN (SELECT value FROM json_each(?)) THEN ${ASK_AFTER_DAYS_FEATURED} ELSE ${ASK_AFTER_DAYS} END) || ' days')
       )
-    LIMIT ?`).all(cap);
+    LIMIT ?`).all(JSON.stringify([...featuredNpis]), cap);
 
   let sent = 0, skipped = 0;
   for (const r of due) {
-    // Dedupe per clinic per month: a re-run today must not send a second ask.
-    const dedupeKey = `ask:${r.site_key}:${today().slice(0, 7)}`;
+    // Dedupe per clinic per period (a month, or half-month for featured clinics): a re-run
+    // today must not send a second ask.
+    const half = featuredNpis.has(r.site_key) ? (Number(today().slice(8, 10)) <= 15 ? "-a" : "-b") : "";
+    const dedupeKey = `ask:${r.site_key}:${today().slice(0, 7)}${half}`;
     const { subject, text, html } = askClinicEmail({
       name: r.name, siteKey: r.site_key, site: SITE, contact: cfg.correctionsEmail,
       yesUrl: respondUrl(r.site_key, "accepting"), fullUrl: respondUrl(r.site_key, "full"),

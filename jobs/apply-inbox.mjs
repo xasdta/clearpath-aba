@@ -427,6 +427,11 @@ If you think this is a mistake, reply to this email and we'll sort it out.
     _session: d.session, _subscription: d.subscription, _since: today(),
   });
   writeJson(FEATURED, featured);
+  // The payer gets the (priority, every-14-days) availability emails. Only if we hold no address
+  // yet: a verified claim contact always wins. A card payment is real accountability, but it is
+  // still not proof of identity, so it never replaces one.
+  if (isEmail(d.email)) db.prepare(`INSERT OR IGNORE INTO ops.clinic_contacts (site_key, email, source, confirmed_at, created_at)
+                                     VALUES (?,?,'featured',?,?)`).run(o.npi, d.email.toLowerCase(), nowIso(), nowIso());
   await mail({
     to: OWNER, tag: "featured-new", dedupeKey: `featured-new:${d.session}`,
     subject: `✅ New featured clinic: ${o.name} (${o.city})`,
