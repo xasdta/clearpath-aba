@@ -74,10 +74,13 @@ async function send() {
   const moved = reconcile();
   const sentToday = db.prepare(`SELECT COUNT(*) c FROM ops.mail_log WHERE tag LIKE 'outreach-_' AND status IN ('sent','dryrun') AND created_at >= date('now')`).get().c;
   const cap = Math.max(0, dailyCap() - sentToday);
-  // Follow-ups first (they were promised a single nudge), then new first contacts.
+  // Follow-ups first (they were promised a single nudge), then new first contacts. First
+  // contacts go out Tuesday–Thursday only: cold email lands best mid-week, while Monday
+  // inboxes are buried and Friday mail sits over the weekend.
+  const firstContactDay = ["Tue", "Wed", "Thu"].includes(dow) || !!process.env.OUTREACH_ANY_DAY;
   const due = [
     ...db.prepare(`SELECT * FROM ops.outreach WHERE status='active' AND step=1 AND last_sent_at <= datetime('now', '-${FOLLOW_UP_DAYS} days') ORDER BY last_sent_at`).all(),
-    ...db.prepare(`SELECT * FROM ops.outreach WHERE status='queued' AND step=0 ORDER BY found_at`).all(),
+    ...(firstContactDay ? db.prepare(`SELECT * FROM ops.outreach WHERE status='queued' AND step=0 ORDER BY found_at`).all() : []),
   ].slice(0, cap);
 
   const out = { sent: 0, failed: 0, skipped: 0 };
