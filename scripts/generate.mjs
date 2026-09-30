@@ -374,7 +374,7 @@ function homePage() {
 
 <section class="card highlight" id="find">
   <h2>Find clinics near you</h2>
-  ${searchBox("q", "Search by clinic name or city — e.g. Bright Path, or Round Rock", true)}
+  ${searchBox("q", "Search by clinic name or city", true)}
   <p class="src or">or narrow by city and insurance:</p>
   <form class="finder" action="#" onsubmit="return cpGo(event)">
     <label>City<select id="cpCity">${cities.slice(0, 60).map((c) => `<option value="${c.city_slug}">${esc(c.city)} (${c.n})</option>`).join("")}</select></label>
@@ -1070,9 +1070,13 @@ button:hover,.btn:hover{background:var(--accent-d)}
 label.wide{display:block;font-size:.88rem;color:var(--soft)}
 .finder{display:flex;gap:.7rem;align-items:flex-end;flex-wrap:wrap}
 .finder label{font-size:.85rem;color:var(--soft);flex:1;min-width:11rem}
-.finder button{margin-top:0;height:2.6rem}
-.finder label.chk{display:flex;align-items:center;gap:.4rem;flex:0 0 auto;min-width:0;white-space:nowrap}
-.finder label.chk input{width:auto;margin:0}
+/* One control height for the whole row so dropdowns, the checkbox and the button share a baseline */
+.finder select{height:2.75rem;margin-top:.3rem}
+.finder button{margin-top:0;height:2.75rem;padding:0 1.3rem}
+.finder label.chk{display:flex;align-items:center;gap:.5rem;flex:0 0 auto;min-width:0;white-space:nowrap;height:2.75rem;padding:0 .9rem;border:1px solid var(--rule);border-radius:6px;background:var(--bg);color:var(--ink);cursor:pointer}
+.finder label.chk:hover{border-color:var(--accent)}
+.finder label.chk input{width:1rem;height:1rem;margin:0;accent-color:var(--accent)}
+@media(max-width:34rem){.finder label.chk,.finder button{flex:1 1 100%;justify-content:center}}
 
 /* ---- 2026-09 redesign ---- */
 html{scroll-behavior:smooth;scroll-padding-top:5.5rem}
