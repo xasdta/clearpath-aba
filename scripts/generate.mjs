@@ -134,7 +134,7 @@ function layout(title, body, { desc = "", canonical = "", jsonld = null, depth =
 ${base && canonical ? `<link rel="canonical" href="${base}${canonical}">` : ""}
 <meta name="build" content="${esc(buildSha)} ${esc(buildStamp)}">
 <meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
-<link rel="stylesheet" href="${up}style.css?v=4">
+<link rel="stylesheet" href="${up}style.css?v=5">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><text y=%2226%22 font-size=%2228%22>%E2%9C%93</text></svg>">
 ${jsonld ? `<script type="application/ld+json">${JSON.stringify(jsonld)}</script>` : ""}
 ${cfg.vercelAnalytics ? `<script defer src="/_vercel/insights/script.js"></script>` : ""}
@@ -160,6 +160,104 @@ function formOpen(kind) {
        <input type="checkbox" name="botcheck" class="hidden" style="display:none" tabindex="-1" autocomplete="off">`;
 }
 
+
+// ---------- home hero map ----------
+// Proportional-symbol map: one dot per city, AREA proportional to provider count (so Houston's
+// 207 reads as ~2x Austin's 90, not 4x). One hue — size carries the magnitude, so there is no
+// colour scale to decode and no legend box; the caption names the encoding. Each dot is a link
+// with a hover/focus tooltip; the city tiles below are the table view of the same numbers.
+// Coordinates are public city centroids; the outline is a simplified state border.
+const TX_OUTLINE = [[-103.04,36.5],[-100,36.5],[-100,34.56],[-99.6,34.38],[-99.19,34.21],[-98.61,34.16],[-98.1,34.13],[-97.6,33.97],[-97.15,33.72],[-96.63,33.85],[-96.15,33.84],[-95.75,33.89],[-95.23,33.96],[-94.73,33.7],[-94.48,33.64],[-94.04,33.55],[-94.04,33.02],[-94.04,31.99],[-93.82,31.6],[-93.55,31.18],[-93.53,30.93],[-93.71,30.4],[-93.76,30.02],[-93.84,29.69],[-94.37,29.55],[-94.75,29.37],[-95.1,29.1],[-95.52,28.83],[-96.2,28.52],[-96.64,28.3],[-97.03,28.03],[-97.24,27.63],[-97.39,27.25],[-97.37,26.9],[-97.23,26.4],[-97.15,26.02],[-97.4,25.95],[-97.67,26.03],[-98.2,26.07],[-98.67,26.24],[-99.1,26.43],[-99.44,27.02],[-99.53,27.5],[-99.87,27.79],[-100.28,28.28],[-100.64,28.9],[-100.96,29.35],[-101.4,29.77],[-101.7,29.76],[-102.32,29.88],[-102.67,29.74],[-102.87,29.35],[-103.1,29],[-103.28,28.98],[-103.6,29.2],[-104.05,29.34],[-104.45,29.58],[-104.7,29.93],[-104.97,30.43],[-105.4,30.85],[-105.95,31.3],[-106.38,31.73],[-106.53,31.79],[-106.62,32],[-103.06,32]];
+const CITY_LL = {
+  houston:[29.76,-95.37], austin:[30.27,-97.74], "san-antonio":[29.42,-98.49], dallas:[32.78,-96.8], katy:[29.79,-95.82],
+  "fort-worth":[32.76,-97.33], spring:[30.08,-95.42], richmond:[29.58,-95.76], "sugar-land":[29.62,-95.63], cypress:[29.97,-95.69],
+  plano:[33.02,-96.7], frisco:[33.15,-96.82], "round-rock":[30.51,-97.68], killeen:[31.12,-97.73], "el-paso":[31.76,-106.49],
+  denton:[33.21,-97.13], arlington:[32.74,-97.11], mckinney:[33.2,-96.62], "cedar-park":[30.51,-97.82], "missouri-city":[29.62,-95.54],
+  pearland:[29.56,-95.29], irving:[32.81,-96.95], mcallen:[26.2,-98.23], abilene:[32.45,-99.73], allen:[33.1,-96.67],
+  grapevine:[32.93,-97.08], lubbock:[33.58,-101.86], bellaire:[29.71,-95.46], carrollton:[32.95,-96.89], edinburg:[26.3,-98.16],
+  "harker-heights":[31.08,-97.66], magnolia:[30.21,-95.75], sherman:[33.64,-96.61], "the-woodlands":[30.17,-95.5],
+  "wichita-falls":[33.91,-98.49], "league-city":[29.51,-95.09], prosper:[33.24,-96.8], richardson:[32.95,-96.73], conroe:[30.31,-95.46],
+  "flower-mound":[33.01,-97.1], humble:[29.99,-95.26], keller:[32.93,-97.25], kingwood:[30.05,-95.19], lewisville:[33.05,-96.99],
+  southlake:[32.94,-97.13], "corpus-christi":[27.8,-97.4], amarillo:[35.22,-101.83], midland:[32,-102.08], odessa:[31.85,-102.37],
+  laredo:[27.53,-99.49], brownsville:[25.9,-97.5], beaumont:[30.08,-94.13], tyler:[32.35,-95.3], waco:[31.55,-97.15],
+  "college-station":[30.63,-96.33], "san-angelo":[31.46,-100.44], longview:[32.5,-94.74], temple:[31.1,-97.34],
+  "new-braunfels":[29.7,-98.12], "san-marcos":[29.88,-97.94], victoria:[28.81,-97], harlingen:[26.19,-97.7], bryan:[30.67,-96.37],
+  georgetown:[30.63,-97.68], pflugerville:[30.44,-97.62], mansfield:[32.56,-97.14], mesquite:[32.77,-96.6], garland:[32.91,-96.64],
+  "grand-prairie":[32.75,-97], texarkana:[33.43,-94.05], nacogdoches:[31.6,-94.66], kerrville:[30.05,-99.14], "del-rio":[29.36,-100.9],
+};
+// Suburbs sit within a few pixels of their core city, so drawn separately they pile into an
+// unreadable cluster. Roll them into one metro dot that links to the core city's page; the
+// tooltip says how many cities the dot covers.
+const METROS = {
+  houston: ["Houston area", ["katy","spring","richmond","sugar-land","cypress","missouri-city","pearland","bellaire","magnolia","the-woodlands","league-city","conroe","humble","kingwood","tomball","friendswood","pasadena","stafford","fulshear","baytown"]],
+  dallas: ["Dallas–Fort Worth", ["fort-worth","plano","frisco","denton","arlington","mckinney","irving","allen","grapevine","carrollton","prosper","richardson","flower-mound","keller","lewisville","southlake","mansfield","mesquite","garland","grand-prairie","coppell","euless","bedford","hurst","rockwall","little-elm","the-colony","wylie","murphy","colleyville","north-richland-hills","addison","farmers-branch","desoto","cedar-hill","rowlett","sachse","celina","forney","burleson","weatherford","midlothian","waxahachie"]],
+  austin: ["Austin area", ["round-rock","cedar-park","georgetown","pflugerville","san-marcos","leander","kyle","buda","hutto","lakeway","dripping-springs"]],
+  "san-antonio": ["San Antonio area", ["new-braunfels","boerne","schertz","converse","helotes","live-oak","universal-city","cibolo"]],
+  killeen: ["Killeen–Temple", ["harker-heights","temple","belton","copperas-cove"]],
+  mcallen: ["Rio Grande Valley", ["edinburg","harlingen","brownsville","mission","pharr","weslaco"]],
+};
+function texasMap() {
+  const W = 480, H = 440, PAD = 14;
+  const kx = Math.cos((31 * Math.PI) / 180);             // equirectangular, scaled at Texas's mid-latitude
+  const xs = TX_OUTLINE.map(([lo]) => lo * kx), ys = TX_OUTLINE.map(([, la]) => la);
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const sc = Math.min((W - 2 * PAD) / (x1 - x0), (H - 2 * PAD) / (y1 - y0));
+  const px = (lo, la) => [PAD + (lo * kx - x0) * sc, PAD + (y1 - la) * sc];
+  const outline = TX_OUTLINE.map(([lo, la], i) => `${i ? "L" : "M"}${px(lo, la).map((v) => v.toFixed(1)).join(",")}`).join("") + "Z";
+  const memberOf = new Map();
+  for (const [core, [, subs]] of Object.entries(METROS)) for (const sub of subs) memberOf.set(sub, core);
+  const groups = new Map();                                  // core slug -> {c, n, open, members}
+  for (const c of cities) {
+    const core = memberOf.get(c.city_slug) ?? c.city_slug;
+    if (!CITY_LL[core]) continue;
+    const g = groups.get(core) ?? { slug: core, name: METROS[core]?.[0] ?? c.city, n: 0, open: 0, members: 0 };
+    g.n += c.n; g.members += 1;
+    g.open += orgs.filter((o) => o.city_slug === c.city_slug && availState(o.site_key).countable).length;
+    groups.set(core, g);
+  }
+  const dots = [...groups.values()]
+    .map((g) => {
+      const [la, lo] = CITY_LL[g.slug];
+      const [x, y] = px(lo, la);
+      return { c: { city_slug: g.slug, city: g.name, n: g.n }, x, y, r: Math.max(4, 1.35 * Math.sqrt(g.n)), open: g.open, members: g.members };
+    })
+    .sort((a, b) => b.r - a.r);                            // big first, so small dots stay on top and clickable
+  const LABEL = { houston: [0, 1], dallas: [1, -1], austin: [-1, 0], "san-antonio": [-1, 1], "el-paso": [1, 0], mcallen: [1, 0] };
+  const mapped = dots.reduce((a, d) => a + d.c.n, 0);
+  return `<figure class="txmap">
+<svg viewBox="0 0 ${W} ${H}" role="img" aria-labelledby="txmap-t txmap-d">
+  <title id="txmap-t">ABA providers across Texas</title>
+  <desc id="txmap-d">One dot per city, sized by number of ABA providers. Largest: ${dots.slice(0, 4).map((d) => `${d.c.city} ${d.c.n}`).join(", ")}.</desc>
+  <path class="tx" d="${outline}"/>
+  ${dots.map((d) => `<a href="tx/${d.c.city_slug}/index.html" class="dot" data-city="${esc(d.c.city)}" data-n="${d.c.n}" data-open="${d.open}" data-cities="${d.members}" aria-label="${esc(d.c.city)}: ${d.c.n} providers${d.open ? `, ${d.open} accepting` : ""}"><circle cx="${d.x.toFixed(1)}" cy="${d.y.toFixed(1)}" r="${d.r.toFixed(1)}"/><circle class="hit" cx="${d.x.toFixed(1)}" cy="${d.y.toFixed(1)}" r="${Math.max(d.r, 9).toFixed(1)}"/></a>`).join("\n  ")}
+  ${dots.filter((d) => LABEL[d.c.city_slug]).map((d) => {
+    const [hx, vy] = LABEL[d.c.city_slug];
+    // hx: -1 left, 1 right, 0 centred below the dot (for dots near the right edge)
+    const tx = d.x + hx * (d.r + 5), ty = hx === 0 ? d.y + d.r + 14 : d.y + vy * (d.r * 0.6) + 4;
+    return `<text class="lbl" x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" text-anchor="${hx > 0 ? "start" : hx < 0 ? "end" : "middle"}">${esc(d.c.city)}</text>`;
+  }).join("\n  ")}
+</svg>
+<figcaption>Each dot is a city or metro area, sized by how many ABA providers it has — ${mapped.toLocaleString()} of ${orgs.length.toLocaleString()} shown. Tap one to see its clinics.</figcaption>
+<div class="maptip" role="status" hidden></div>
+<script>
+(function(){
+  var fig=document.currentScript.parentNode,tip=fig.querySelector(".maptip");
+  function show(e){
+    var a=e.target.closest("a.dot"); if(!a) return;
+    var n=+a.dataset.n,o=+a.dataset.open,b=document.createElement("b");
+    tip.textContent="";b.textContent=a.dataset.city;tip.appendChild(b);
+    var m=+a.dataset.cities;tip.appendChild(document.createTextNode(" · "+n+" provider"+(n===1?"":"s")+(m>1?" in "+m+" cities":"")+(o?" · "+o+" accepting":"")));
+    var fr=fig.getBoundingClientRect(),cr=a.querySelector("circle").getBoundingClientRect();
+    tip.style.left=(cr.left+cr.width/2-fr.left)+"px";tip.style.top=(cr.top-fr.top)+"px";tip.hidden=false;
+  }
+  function hide(){tip.hidden=true;}
+  fig.addEventListener("mouseover",show);fig.addEventListener("focusin",show);
+  fig.addEventListener("mouseout",hide);fig.addEventListener("focusout",hide);
+})();
+</script>
+</figure>`;
+}
+
 // ---------- pages ----------
 function homePage() {
   const topCities = cities.slice(0, 18);
@@ -170,8 +268,15 @@ function homePage() {
     url: base || undefined, description: cfg.tagline,
   };
   const body = `
-<h1>Which Texas ABA clinics can actually take your child right now</h1>
-<p class="lede">Most autism-therapy directories list whoever signs up and never ask again, so you call ten clinics and hear "we have a six-month waitlist" ten times. We call the clinics, ask whether they can take a new client, and publish the answer with the date we got it — then re-ask every 30 days and retire anything we cannot re-confirm.</p>
+<section class="hero">
+  <div class="hero-text">
+    <p class="eyebrow">${orgs.length.toLocaleString()} Texas ABA providers · ${verifiedOrgs.length} license-verified</p>
+    <h1>Which Texas ABA clinics can actually take your child right now</h1>
+    <p class="lede">Most autism-therapy directories list whoever signs up and never ask again, so you call ten clinics and hear "we have a six-month waitlist" ten times. We ask the clinics whether they can take a new client and publish the answer with the date we got it — then re-ask every 30 days and retire anything we can't re-confirm.</p>
+    <div class="hero-cta"><a class="btn big" href="#find">Find a clinic</a><a class="btn ghost big" href="openings.html">See confirmed openings</a></div>
+  </div>
+  ${texasMap()}
+</section>
 
 <div class="stats">
   <a class="stat" href="openings.html"><b>${openCount}</b><span>clinics with confirmed openings</span><em>${openCount ? "See openings →" : "How it works →"}</em></a>
@@ -180,7 +285,7 @@ function homePage() {
   <a class="stat" href="verified.html"><b>${verifiedOrgs.length}</b><span>with a license-verified director</span><em>See verified clinics →</em></a>
 </div>
 
-<section class="card highlight">
+<section class="card highlight" id="find">
   <h2>Find clinics near you</h2>
   <label class="search">Search by clinic name or city
     <input id="q" type="search" placeholder="e.g. Bright Path, or Round Rock" autocomplete="off" maxlength="80" aria-controls="qres">
@@ -795,10 +900,10 @@ const notFoundPage = () => layout("Page not found | ${cfg.siteName}", `
 // ---------- css ----------
 const CSS = `:root{--ink:#182529;--soft:#4f6167;--faint:#87979c;--accent:#0d6b5b;--accent-d:#0a5347;--accent-bg:#e5f1ee;
 --ok:#0d6b5b;--ok-bg:#e5f1ee;--warn:#8a5a15;--warn-bg:#f7edda;--bad:#94413a;--bad-bg:#f6e5e2;--mut:#5d6d72;--mut-bg:#edf0f0;
---rule:#dde5e3;--bg:#fbfcfb;--card:#fff;--feat:#7a5b12;--feat-bg:#faf1d8}
+--rule:#dde5e3;--bg:#fbfcfb;--card:#fff;--feat:#7a5b12;--feat-bg:#faf1d8;--viz:#0a8a6c;--land:#eef4f2;--hero:linear-gradient(160deg,#e5f1ee 0%,#fbfcfb 60%)}
 @media(prefers-color-scheme:dark){:root{--ink:#e7ecea;--soft:#a9b7b8;--faint:#7d8c8f;--accent:#5fbfa8;--accent-d:#7fd0bb;--accent-bg:#12302a;
 --ok:#5fbfa8;--ok-bg:#12302a;--warn:#d6ab5f;--warn-bg:#2f2716;--bad:#d1867c;--bad-bg:#331f1d;--mut:#9aa8ab;--mut-bg:#212a2c;
---rule:#2c3739;--bg:#12181a;--card:#182022;--feat:#d9b976;--feat-bg:#2b2515}}
+--rule:#2c3739;--bg:#12181a;--card:#182022;--feat:#d9b976;--feat-bg:#2b2515;--viz:#22a883;--land:#1a2426;--hero:linear-gradient(160deg,#153029 0%,#12181a 65%)}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
 .wrap{max-width:62rem;margin:0 auto;padding:0 1.1rem}
@@ -893,6 +998,20 @@ footer .fine{font-size:.78rem;color:var(--faint)}
 .status.ok{color:var(--ok)}.status.warn{color:var(--warn)}.status.bad{color:var(--bad)}.status.mut{color:var(--mut)}
 .summary-actions{display:flex;gap:.5rem;flex-wrap:wrap}.summary-actions .btn{margin-top:0}
 .btn.ghost{border-color:var(--accent)}
+.hero{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:1.5rem;align-items:center;margin:1.2rem 0 .4rem;padding:1.6rem;border:1px solid var(--rule);border-radius:14px;background:var(--hero)}
+.hero h1{margin-top:.2rem}.hero .lede{margin-bottom:1rem}
+.eyebrow{font-size:.78rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-d);margin:0}
+.hero-cta{display:flex;gap:.6rem;flex-wrap:wrap}.hero-cta .btn{margin-top:0;display:inline-block}
+.txmap{margin:0;position:relative}.txmap svg{width:100%;height:auto;display:block}
+.txmap .tx{fill:var(--land);stroke:var(--rule);stroke-width:1.5;stroke-linejoin:round}
+.txmap .dot circle{fill:var(--viz);fill-opacity:.85;stroke:var(--card);stroke-width:2;transition:fill-opacity .15s}
+.txmap .dot circle.hit{fill:transparent;stroke:none}
+.txmap .dot:hover circle:first-child,.txmap .dot:focus circle:first-child{fill-opacity:1;stroke:var(--ink)}
+.txmap .dot:focus{outline:none}
+.txmap .lbl{font-size:12px;font-weight:600;fill:var(--soft);paint-order:stroke;stroke:var(--card);stroke-width:3px;pointer-events:none}
+.txmap figcaption{font-size:.8rem;color:var(--faint);margin-top:.4rem;text-align:center}
+.maptip{position:absolute;transform:translate(-50%,calc(-100% - 8px));background:var(--card);border:1px solid var(--rule);border-radius:6px;padding:.3rem .55rem;font-size:.82rem;white-space:nowrap;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.18);color:var(--ink)}
+@media(max-width:46rem){.hero{grid-template-columns:1fr;padding:1.1rem}.txmap{max-width:26rem;margin:0 auto}}
 .search{display:block;font-size:.85rem;color:var(--soft);margin-bottom:.2rem}
 .search input{font-size:1.05rem;padding:.65rem .8rem}
 .qres{list-style:none;margin:.3rem 0 0;padding:0;border:1px solid var(--rule);border-radius:8px;overflow:hidden;background:var(--bg)}
