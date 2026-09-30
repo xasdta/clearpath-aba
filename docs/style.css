@@ -12,9 +12,9 @@ header.top{background:var(--card);border-bottom:1px solid var(--rule);position:s
 header.top .wrap{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding-top:.7rem;padding-bottom:.7rem;flex-wrap:wrap}
 .brand{font-weight:800;font-size:1.15rem;letter-spacing:-.02em;color:var(--ink);text-decoration:none}
 .brand span{color:var(--accent);margin-left:.25rem}
-nav{display:flex;gap:1rem;align-items:center;flex-wrap:wrap}
-nav a{font-size:.9rem;text-decoration:none;color:var(--soft)}nav a:hover{color:var(--accent-d)}
-nav a.cta{background:var(--accent);color:#fff;padding:.35rem .75rem;border-radius:5px;font-weight:600}
+header nav{display:flex;gap:1rem;align-items:center;flex-wrap:wrap}
+header nav a{font-size:.9rem;text-decoration:none;color:var(--soft)}header nav a:hover{color:var(--accent-d)}
+header nav a.cta{background:var(--accent);color:#fff;padding:.35rem .75rem;border-radius:5px;font-weight:600}
 main{padding-bottom:3rem}
 h1{font-size:clamp(1.6rem,4vw,2.3rem);line-height:1.15;letter-spacing:-.02em;margin:1.6rem 0 .5rem;text-wrap:balance}
 h2{font-size:1.25rem;letter-spacing:-.01em;margin:2rem 0 .7rem}
@@ -23,12 +23,23 @@ h3{font-size:1.02rem;margin:0 0 .35rem}
 p{margin:0 0 .9rem}ul{margin:0 0 .9rem;padding-left:1.1rem}li{margin-bottom:.35rem}
 .card{background:var(--card);border:1px solid var(--rule);border-radius:9px;padding:1.1rem;margin:.7rem 0}
 .card.highlight{border-color:var(--accent);border-width:1px}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:.7rem}
+.card>h2:first-child,.card>h3:first-child{margin-top:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(15rem,100%),1fr));gap:.7rem}
+.grid>.card,.grid>a.card{margin:0}
+.grid.dense{grid-template-columns:repeat(auto-fill,minmax(11rem,1fr))}
+@media(max-width:34rem){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.grid.two{grid-template-columns:1fr}}
 .grid.two{grid-template-columns:repeat(auto-fit,minmax(20rem,1fr))}
 a.tile{text-decoration:none;color:var(--ink);display:flex;flex-direction:column;gap:.15rem}
-a.tile:hover{border-color:var(--accent)}a.tile span{color:var(--faint);font-size:.85rem}
+a.tile{position:relative;transition:border-color .15s,transform .15s}
+a.tile:hover{border-color:var(--accent);transform:translateY(-1px)}a.tile span{color:var(--faint);font-size:.85rem}
+a.tile strong{color:var(--ok);font-weight:600}
+a.tile::after{content:"→";position:absolute;right:1rem;top:50%;transform:translateY(-50%);color:var(--faint);transition:color .15s,right .15s}
+a.tile:hover::after{color:var(--accent-d);right:.8rem}
+.more{margin:.8rem 0 0;font-size:.92rem}.more a{font-weight:600;text-decoration:none}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(10rem,1fr));gap:.7rem;margin:1.2rem 0}
-.stats div{background:var(--card);border:1px solid var(--rule);border-radius:9px;padding:.9rem}
+.stats .stat{display:flex;flex-direction:column;background:var(--card);border:1px solid var(--rule);border-radius:9px;padding:.9rem;text-decoration:none;color:var(--ink)}
+a.stat{transition:border-color .15s,transform .15s}a.stat:hover{border-color:var(--accent);transform:translateY(-1px)}
+.stats em{font-style:normal;font-size:.8rem;font-weight:600;color:var(--accent-d);margin-top:auto;padding-top:.45rem}
 .stats b{display:block;font-size:1.7rem;line-height:1.1;color:var(--accent);font-variant-numeric:tabular-nums}
 .stats span{font-size:.83rem;color:var(--soft)}
 .badge{display:inline-block;font-size:.75rem;font-weight:600;padding:.16rem .5rem;border-radius:4px;margin:0 .3rem .3rem 0}
@@ -39,7 +50,7 @@ a.tile:hover{border-color:var(--accent)}a.tile span{color:var(--faint);font-size
 .row{display:flex;gap:1rem;align-items:flex-start}.row-main{flex:1;min-width:0}
 .row a{text-decoration:none;font-size:1.05rem}.row a:hover{text-decoration:underline}
 .src{font-size:.82rem;color:var(--faint);margin-top:.25rem}
-.crumbs{font-size:.85rem;color:var(--faint);margin-top:1rem}.crumbs a{color:var(--soft)}
+.crumbs{font-size:.85rem;color:var(--faint);margin-top:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.crumbs a{color:var(--soft)}
 .chips{display:flex;flex-wrap:wrap;gap:.4rem;margin:.9rem 0}
 .chip{font-size:.82rem;text-decoration:none;background:var(--card);border:1px solid var(--rule);padding:.3rem .65rem;border-radius:99px;color:var(--soft)}
 .chip:hover{border-color:var(--accent);color:var(--accent-d)}
@@ -75,3 +86,17 @@ footer .fine{font-size:.78rem;color:var(--faint)}
 .finder button{margin-top:0;height:2.6rem}
 .finder label.chk{display:flex;align-items:center;gap:.4rem;flex:0 0 auto;min-width:0;white-space:nowrap}
 .finder label.chk input{width:auto;margin:0}
+.list{background:var(--card);border:1px solid var(--rule);border-radius:9px;overflow:hidden;margin:.7rem 0}
+.list a.item{display:flex;gap:1rem;align-items:center;justify-content:space-between;padding:.8rem 1rem;text-decoration:none;color:var(--ink);border-top:1px solid var(--rule)}
+.list a.item:first-child{border-top:0}.list a.item:hover{background:var(--accent-bg)}
+.item-main{display:flex;flex-direction:column;min-width:0}.item-main b{color:var(--accent-d)}
+.item .meta{font-size:.82rem;color:var(--faint)}.item .badges{flex:0 0 auto;text-align:right}.item .badge{margin:.15rem 0 .15rem .3rem}
+@media(max-width:40rem){.list a.item{flex-direction:column;align-items:flex-start;gap:.35rem}.item .badges{text-align:left}.item .badge{margin:0 .3rem .2rem 0}}
+.summary{display:flex;gap:1rem;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:1rem}
+.summary .label{display:block;font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);font-weight:700}
+.summary .status{display:inline-block;font-size:1.15rem;font-weight:700;margin:.15rem 0 .4rem}
+.status.ok{color:var(--ok)}.status.warn{color:var(--warn)}.status.bad{color:var(--bad)}.status.mut{color:var(--mut)}
+.summary-actions{display:flex;gap:.5rem;flex-wrap:wrap}.summary-actions .btn{margin-top:0}
+.btn.ghost{border-color:var(--accent)}
+.letters{display:flex;flex-wrap:wrap;gap:.35rem .8rem;font-size:.92rem}.letters a{text-decoration:none;font-weight:600}
+@media(max-width:34rem){header.top .wrap{gap:.4rem}header nav{gap:.25rem .8rem;width:100%}header nav a.cta{margin-left:auto}}

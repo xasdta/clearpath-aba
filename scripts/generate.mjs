@@ -10,6 +10,7 @@
 import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, copyFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { openDb } from "../lib/db.mjs";
+import { displayName } from "../lib/names.mjs";
 
 const root = new URL("../", import.meta.url);
 const OUT = new URL("docs/", root);
@@ -47,6 +48,10 @@ const orgs = db.prepare(`
 const cities = db.prepare(`
   SELECT city, city_slug, COUNT(*) n FROM sites WHERE city_slug != '' AND active = 1
   GROUP BY city_slug ORDER BY n DESC`).all();
+// NPPES stores names in capitals; show them the way the clinic writes them. legal_name keeps the
+// registry spelling for the provider page, and matching elsewhere is case-insensitive.
+for (const o of orgs) { o.legal_name = o.name; o.name = displayName(o.name); o.city = displayName(o.city); }
+for (const c of cities) c.city = displayName(c.city);
 const licenses = db.prepare(`SELECT name, license_no, license_type, status, expires FROM clinicians ORDER BY name`).all();
 const activeLicenses = licenses.filter((l) => l.status === "active");
 const verifiedOrgs = orgs.filter((o) => o.ao_license_status === "active");
@@ -97,6 +102,19 @@ function openingsRank(o) {
   const tierScore = av.accepting ? (av.tier === "fresh" ? 0 : 1) : av.tier === "none" ? 3 : av.tier === "stale" ? 4 : 5;
   return [tierScore, o.ao_license_status === "active" ? 0 : 1, av.days ?? 999];
 }
+// One clinic in a list. The whole row is the link; badges sit under the name on phones and to
+// the right on wide screens. up = path back to the site root from the page being built.
+function providerRow(o, up, extra = "") {
+  const av = availState(o.site_key);
+  const claim = claimBy.get(o.npi);
+  return `<a class="item" href="${up}providers/${o.npi}.html">
+  <span class="item-main"><b>${esc(o.name)}</b>
+    <span class="meta">${esc(o.address1 ?? "")} · ${esc(o.city)}, TX ${esc(o.zip ?? "")}${o.phone ? ` · ${esc(o.phone)}` : ""}</span></span>
+  <span class="badges">${licBadge(o)}<span class="badge ${av.cls}">${esc(av.label)}</span>${claim ? `<span class="badge ok">Claimed</span>` : ""}${extra}</span>
+</a>`;
+}
+const providerList = (rows, up, extra = () => "") => `<div class="list">${rows.map((o) => providerRow(o, up, extra(o))).join("")}</div>`;
+
 // POSITIVE-ONLY license rendering (see header rule)
 function licBadge(o) {
   return o.ao_license_status === "active"
@@ -116,7 +134,7 @@ function layout(title, body, { desc = "", canonical = "", jsonld = null, depth =
 ${base && canonical ? `<link rel="canonical" href="${base}${canonical}">` : ""}
 <meta name="build" content="${esc(buildSha)} ${esc(buildStamp)}">
 <meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
-<link rel="stylesheet" href="${up}style.css?v=3">
+<link rel="stylesheet" href="${up}style.css?v=4">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><text y=%2226%22 font-size=%2228%22>%E2%9C%93</text></svg>">
 ${jsonld ? `<script type="application/ld+json">${JSON.stringify(jsonld)}</script>` : ""}
 ${cfg.vercelAnalytics ? `<script defer src="/_vercel/insights/script.js"></script>` : ""}
@@ -156,10 +174,10 @@ function homePage() {
 <p class="lede">Most autism-therapy directories list whoever signs up and never ask again, so you call ten clinics and hear "we have a six-month waitlist" ten times. We call the clinics, ask whether they can take a new client, and publish the answer with the date we got it — then re-ask every 30 days and retire anything we cannot re-confirm.</p>
 
 <div class="stats">
-  <div><b>${openCount}</b><span>clinics with confirmed openings</span></div>
-  <div><b>${askedCount.toLocaleString()}</b><span>clinics asked so far</span></div>
-  <div><b>${orgs.length.toLocaleString()}</b><span>ABA organizations statewide</span></div>
-  <div><b>${verifiedOrgs.length}</b><span>with a license-verified director</span></div>
+  <a class="stat" href="openings.html"><b>${openCount}</b><span>clinics with confirmed openings</span><em>${openCount ? "See openings →" : "How it works →"}</em></a>
+  <a class="stat" href="openings.html#answered"><b>${askedCount.toLocaleString()}</b><span>clinics asked so far</span><em>See who answered →</em></a>
+  <a class="stat" href="cities.html"><b>${orgs.length.toLocaleString()}</b><span>ABA organizations statewide</span><em>Browse all cities →</em></a>
+  <a class="stat" href="verified.html"><b>${verifiedOrgs.length}</b><span>with a license-verified director</span><em>See verified clinics →</em></a>
 </div>
 
 <section class="card highlight">
@@ -177,8 +195,9 @@ function homePage() {
 <h2>Browse by city</h2>
 <div class="grid">${topCities.map((c) => {
     const n = orgs.filter((o) => o.city_slug === c.city_slug && availState(o.site_key).countable).length;
-    return `<a class="tile card" href="tx/${c.city_slug}/index.html"><b>${esc(c.city)}</b><span>${c.n} provider${c.n === 1 ? "" : "s"}${n ? ` · ${n} accepting` : ""}</span></a>`;
+    return `<a class="tile card" href="tx/${c.city_slug}/index.html"><b>${esc(c.city)}</b><span>${c.n} provider${c.n === 1 ? "" : "s"}${n ? ` · <strong>${n} accepting</strong>` : ""}</span></a>`;
   }).join("")}</div>
+<p class="more"><a href="cities.html">All ${cities.length} Texas cities →</a></p>
 
 ${alertSignup(null, null, 0)}
 
@@ -234,21 +253,13 @@ ${feats.length ? `<h2 class="fh">Featured providers</h2>
   }).join("")}</div>` : ""}
 
 <h2>${openOnly ? "Confirmed openings" : `All providers${payer ? ` accepting ${esc(PAYERS[payer])}` : ""}`}</h2>
-${ranked.map((o) => {
-    const av = availState(o.site_key);
-    const p = payer ? payerStatus(o.site_key, payer) : null;
-    const claim = claimBy.get(o.npi);
-    return `<div class="card row">
-  <div class="row-main">
-    <a href="../../providers/${o.npi}.html"><b>${esc(o.name)}</b></a>
-    <div class="src">${esc(o.address1 ?? "")} · ${esc(o.city)}, TX ${esc(o.zip ?? "")}${o.phone ? ` · ${esc(o.phone)}` : ""}</div>
-    <div class="badges">${licBadge(o)}<span class="badge ${av.cls}">${esc(av.label)}</span>${claim ? `<span class="badge ok">Claimed</span>` : ""}${
-      payer ? (p?.status === "verified_yes"
-        ? `<span class="badge ok">${esc(PAYERS[payer])} confirmed ${esc(p.verified_at)}</span>`
-        : `<span class="badge warn">${esc(PAYERS[payer])} not yet verified</span>`) : ""}</div>
-  </div>
-</div>`;
-  }).join("")}
+${providerList(ranked, "../../", (o) => {
+    if (!payer) return "";
+    const p = payerStatus(o.site_key, payer);
+    return p?.status === "verified_yes"
+      ? `<span class="badge ok">${esc(PAYERS[payer])} confirmed ${esc(p.verified_at)}</span>`
+      : `<span class="badge warn">${esc(PAYERS[payer])} not yet verified</span>`;
+  })}
 
 ${ranked.length === 0 && !openOnly ? `<div class="notice">No providers listed here yet.</div>` : ""}
 ${alertSignup(c.city, c.city_slug, 2)}
@@ -291,10 +302,20 @@ function providerPage(o) {
     medicalSpecialty: "Applied Behavior Analysis", dateModified: today,
   };
   const body = `
-<nav class="crumbs"><a href="../index.html">Home</a> › <a href="../tx/${o.city_slug}/index.html">${esc(o.city)}</a> › ${esc(o.name)}</nav>
+<nav class="crumbs"><a href="../index.html">Home</a> › <a href="../tx/${o.city_slug}/index.html">${esc(o.city)}</a> › <span>${esc(o.name)}</span></nav>
 <h1>${esc(o.name)}</h1>
-<p class="lede">${esc(o.address1 ?? "")} · ${esc(o.city)}, TX ${esc(o.zip ?? "")}${(claim?.phone ?? o.phone) ? ` · ${esc(claim?.phone ?? o.phone)}` : ""}</p>
-<div class="badges big">${licBadge(o)}<span class="badge ${av.cls}">${esc(av.label)}</span>${claim ? `<span class="badge ok">Claimed profile</span>` : `<span class="badge mut">Unclaimed</span>`}</div>
+<p class="lede">${esc(o.address1 ?? "")} · ${esc(o.city)}, TX ${esc(o.zip ?? "")}</p>
+<div class="card summary">
+  <div class="summary-status">
+    <span class="label">Taking new clients?</span>
+    <span class="status ${av.cls}">${esc(av.label)}</span>
+    <div class="badges">${licBadge(o)}${claim ? `<span class="badge ok">Claimed profile</span>` : `<span class="badge mut">Unclaimed</span>`}</div>
+  </div>
+  <div class="summary-actions">
+    ${(claim?.phone ?? o.phone) ? `<a class="btn" href="tel:${esc(String(claim?.phone ?? o.phone).replace(/[^0-9+]/g, ""))}">Call ${esc(claim?.phone ?? o.phone)}</a>` : ""}
+    <a class="btn ghost" href="#ask">Ask about availability</a>
+  </div>
+</div>
 
 ${claim ? `<div class="card claimed"><h2>From the provider</h2>
   ${claim.website ? `<p><a href="${esc(claim.website)}" rel="nofollow">${esc(claim.website)}</a></p>` : ""}
@@ -303,6 +324,7 @@ ${claim ? `<div class="card claimed"><h2>From the provider</h2>
   <div class="src">Claimed and identity-verified ${esc(claim.claimed_date)}. Claiming is free and does not affect ranking.</div></div>` : ""}
 
 <h2>Credential verification</h2>
+${o.legal_name !== o.name.toUpperCase() ? `<p class="src">Registered with the NPI registry as ${esc(o.legal_name)}.</p>` : ""}
 <div class="card">
 ${o.ao_license_status === "active" ? `
   <p><b>${esc(o.ao_name)}</b>${o.ao_credential ? ` (${esc(o.ao_credential)})` : ""} — authorized official on the federal NPI record.</p>
@@ -318,16 +340,17 @@ ${o.ao_license_status === "active" ? `
 </div>
 
 <h2>Insurance</h2>
-<div class="card"><table>
+${pays.some((p) => p.status !== "unverified") ? `<div class="card"><table>
 <tr><th>Plan</th><th>Status</th></tr>
 ${pays.map((p) => `<tr><td>${esc(PAYERS[p.payer] ?? p.payer)}</td><td>${
     p.status === "verified_yes" ? `<span class="badge ok">Accepted — confirmed with the clinic ${esc(p.verified_at)}</span>`
     : p.status === "verified_no" ? `<span class="badge bad">Not accepted (confirmed ${esc(p.verified_at)})</span>`
     : `<span class="badge warn">Not yet verified</span>`}</td></tr>`).join("")}
 </table>
-<div class="src">We mark a plan accepted only after confirming it with the clinic directly. Always re-confirm coverage before your first appointment — plan networks change.</div></div>
+<div class="src">We mark a plan accepted only after confirming it with the clinic directly. Always re-confirm coverage before your first appointment — plan networks change.</div></div>` : `<div class="card"><p>We haven't confirmed which plans ${esc(o.name)} accepts yet. We only mark a plan accepted after confirming it with the clinic directly — ask when you call.</p>
+<div class="chips">${Object.values(PAYERS).map((v) => `<span class="chip">${esc(v)}</span>`).join("")}</div></div>`}
 
-<h2>Ask this provider about availability</h2>
+<h2 id="ask">Ask this provider about availability</h2>
 ${formOpen("inquiry")}
   <input type="hidden" name="npi" value="${esc(o.npi)}">
   <input type="hidden" name="provider" value="${esc(o.name)}">
@@ -516,6 +539,49 @@ ${top.map((c) => `<tr><td><a href="tx/${c.city_slug}/index.html">${esc(c.city)}<
 }
 
 // Statewide openings page — the shareable asset for parent groups and the physician mailer.
+function citiesPage() {
+  const byLetter = new Map();
+  for (const c of [...cities].sort((a, b) => a.city.localeCompare(b.city))) {
+    const k = c.city[0].toUpperCase();
+    if (!byLetter.has(k)) byLetter.set(k, []);
+    byLetter.get(k).push(c);
+  }
+  const body = `
+<nav class="crumbs"><a href="index.html">Home</a> › All cities</nav>
+<h1>ABA providers in every Texas city</h1>
+<p class="lede">${orgs.length.toLocaleString()} ABA organizations across ${cities.length} cities, from the federal NPI registry. Pick a city to see its clinics, with confirmed openings first.</p>
+<p class="letters">${[...byLetter.keys()].map((k) => `<a href="#l-${k}">${k}</a>`).join("")}</p>
+${[...byLetter.entries()].map(([k, list]) => `<h2 id="l-${k}">${k}</h2>
+<div class="grid dense">${list.map((c) => {
+    const n = orgs.filter((o) => o.city_slug === c.city_slug && availState(o.site_key).countable).length;
+    return `<a class="tile card" href="tx/${c.city_slug}/index.html"><b>${esc(c.city)}</b><span>${c.n} provider${c.n === 1 ? "" : "s"}${n ? ` · <strong>${n} accepting</strong>` : ""}</span></a>`;
+  }).join("")}</div>`).join("")}`;
+  return layout(`ABA Therapy Providers in Every Texas City | ${cfg.siteName}`, body, {
+    desc: `Browse ${orgs.length.toLocaleString()} Texas ABA therapy providers across ${cities.length} cities, with license verification and confirmed openings.`,
+    canonical: "/cities.html",
+  });
+}
+
+function verifiedPage() {
+  const byCity = new Map();
+  for (const o of [...verifiedOrgs].sort((a, b) => a.city.localeCompare(b.city) || a.name.localeCompare(b.name))) {
+    if (!byCity.has(o.city)) byCity.set(o.city, []);
+    byCity.get(o.city).push(o);
+  }
+  const top = [...byCity.entries()].sort((a, b) => b[1].length - a[1].length);
+  const body = `
+<nav class="crumbs"><a href="index.html">Home</a> › License-verified clinics</nav>
+<h1>Texas ABA clinics with a license-verified director</h1>
+<p class="lede">${verifiedOrgs.length} of ${orgs.length.toLocaleString()} organizations have a clinical director we matched to an active behavior-analyst license in the Texas TDLR roster, each stamped with the date we checked. The rest are not necessarily unlicensed — usually the names just didn't match cleanly, so we don't claim either way.</p>
+<p class="letters">${top.slice(0, 12).map(([city, rows]) => `<a href="#c-${esc(rows[0].city_slug)}">${esc(city)} (${rows.length})</a>`).join("")}</p>
+${[...byCity.entries()].map(([city, rows]) => `<h2 id="c-${esc(rows[0].city_slug)}">${esc(city)} <span class="src">(${rows.length})</span></h2>
+${providerList(rows, "")}`).join("")}`;
+  return layout(`License-Verified ABA Clinics in Texas | ${cfg.siteName}`, body, {
+    desc: `${verifiedOrgs.length} Texas ABA clinics whose clinical director holds an active, verified TDLR behavior-analyst license.`,
+    canonical: "/verified.html",
+  });
+}
+
 function openingsPage() {
   const open = orgs.map((o) => ({ o, av: availState(o.site_key) }))
     .filter((r) => r.av.accepting)
@@ -526,25 +592,28 @@ function openingsPage() {
     byCity.get(r.o.city).push(r);
   }
   const checkedCount = orgs.filter((o) => availState(o.site_key).tier !== "none").length;
+  const answered = orgs.filter((o) => availState(o.site_key).tier !== "none")
+    .sort((a, b) => (availState(a.site_key).days ?? 999) - (availState(b.site_key).days ?? 999));
   const body = `
 <h1>Texas ABA clinics accepting new clients</h1>
 <p class="lede">Every clinic below told us directly that they can take new clients, and every entry is dated. We re-ask every 30 days and retire any answer we cannot re-confirm — an old "yes" is worse than no answer at all when you are the one making the calls.</p>
 
 <div class="stats">
-  <div><b>${open.length}</b><span>clinics with confirmed openings</span></div>
-  <div><b>${byCity.size}</b><span>cities with an opening</span></div>
-  <div><b>${checkedCount}</b><span>of ${orgs.length.toLocaleString()} clinics asked so far</span></div>
+  <div class="stat"><b>${open.length}</b><span>clinics with confirmed openings</span></div>
+  <div class="stat"><b>${byCity.size}</b><span>cities with an opening</span></div>
+  <a class="stat" href="#answered"><b>${checkedCount}</b><span>of ${orgs.length.toLocaleString()} clinics asked so far</span><em>See who answered →</em></a>
 </div>
 
 ${open.length === 0 ? `<div class="notice"><b>We have not confirmed any openings yet.</b> Availability is collected by calling clinics one at a time, and we are early in that work — so this page is empty rather than padded with guesses. Set an alert below and you will hear the moment that changes.</div>` : ""}
 
 ${[...byCity.entries()].map(([city, rows]) => `
 <h2>${esc(city)} <span class="src">(${rows.length})</span></h2>
-${rows.map(({ o, av }) => `<div class="card row"><div class="row-main">
-  <a href="providers/${o.npi}.html"><b>${esc(o.name)}</b></a>
-  <div class="src">${esc(o.address1 ?? "")} · ${esc(o.city)}, TX${o.phone ? ` · ${esc(o.phone)}` : ""}</div>
-  <div class="badges">${licBadge(o)}<span class="badge ${av.cls}">${esc(av.label)}</span></div>
-</div></div>`).join("")}`).join("")}
+${providerList(rows.map((r) => r.o), "")}`).join("")}
+
+<h2 id="answered">Every clinic that has answered <span class="src">(${answered.length})</span></h2>
+${answered.length
+    ? `<p class="src">Openings above, plus clinics that told us they are full or whose answer is getting old — so you can see who has been asked, not just who said yes.</p>${providerList(answered, "")}`
+    : `<div class="notice">No clinic has answered yet. We are early in asking — this list fills in as clinics reply, each answer dated.</div>`}
 
 ${alertSignup(null, null, 0)}
 
@@ -645,9 +714,9 @@ header.top{background:var(--card);border-bottom:1px solid var(--rule);position:s
 header.top .wrap{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding-top:.7rem;padding-bottom:.7rem;flex-wrap:wrap}
 .brand{font-weight:800;font-size:1.15rem;letter-spacing:-.02em;color:var(--ink);text-decoration:none}
 .brand span{color:var(--accent);margin-left:.25rem}
-nav{display:flex;gap:1rem;align-items:center;flex-wrap:wrap}
-nav a{font-size:.9rem;text-decoration:none;color:var(--soft)}nav a:hover{color:var(--accent-d)}
-nav a.cta{background:var(--accent);color:#fff;padding:.35rem .75rem;border-radius:5px;font-weight:600}
+header nav{display:flex;gap:1rem;align-items:center;flex-wrap:wrap}
+header nav a{font-size:.9rem;text-decoration:none;color:var(--soft)}header nav a:hover{color:var(--accent-d)}
+header nav a.cta{background:var(--accent);color:#fff;padding:.35rem .75rem;border-radius:5px;font-weight:600}
 main{padding-bottom:3rem}
 h1{font-size:clamp(1.6rem,4vw,2.3rem);line-height:1.15;letter-spacing:-.02em;margin:1.6rem 0 .5rem;text-wrap:balance}
 h2{font-size:1.25rem;letter-spacing:-.01em;margin:2rem 0 .7rem}
@@ -656,12 +725,23 @@ h3{font-size:1.02rem;margin:0 0 .35rem}
 p{margin:0 0 .9rem}ul{margin:0 0 .9rem;padding-left:1.1rem}li{margin-bottom:.35rem}
 .card{background:var(--card);border:1px solid var(--rule);border-radius:9px;padding:1.1rem;margin:.7rem 0}
 .card.highlight{border-color:var(--accent);border-width:1px}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:.7rem}
+.card>h2:first-child,.card>h3:first-child{margin-top:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(15rem,100%),1fr));gap:.7rem}
+.grid>.card,.grid>a.card{margin:0}
+.grid.dense{grid-template-columns:repeat(auto-fill,minmax(11rem,1fr))}
+@media(max-width:34rem){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.grid.two{grid-template-columns:1fr}}
 .grid.two{grid-template-columns:repeat(auto-fit,minmax(20rem,1fr))}
 a.tile{text-decoration:none;color:var(--ink);display:flex;flex-direction:column;gap:.15rem}
-a.tile:hover{border-color:var(--accent)}a.tile span{color:var(--faint);font-size:.85rem}
+a.tile{position:relative;transition:border-color .15s,transform .15s}
+a.tile:hover{border-color:var(--accent);transform:translateY(-1px)}a.tile span{color:var(--faint);font-size:.85rem}
+a.tile strong{color:var(--ok);font-weight:600}
+a.tile::after{content:"→";position:absolute;right:1rem;top:50%;transform:translateY(-50%);color:var(--faint);transition:color .15s,right .15s}
+a.tile:hover::after{color:var(--accent-d);right:.8rem}
+.more{margin:.8rem 0 0;font-size:.92rem}.more a{font-weight:600;text-decoration:none}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(10rem,1fr));gap:.7rem;margin:1.2rem 0}
-.stats div{background:var(--card);border:1px solid var(--rule);border-radius:9px;padding:.9rem}
+.stats .stat{display:flex;flex-direction:column;background:var(--card);border:1px solid var(--rule);border-radius:9px;padding:.9rem;text-decoration:none;color:var(--ink)}
+a.stat{transition:border-color .15s,transform .15s}a.stat:hover{border-color:var(--accent);transform:translateY(-1px)}
+.stats em{font-style:normal;font-size:.8rem;font-weight:600;color:var(--accent-d);margin-top:auto;padding-top:.45rem}
 .stats b{display:block;font-size:1.7rem;line-height:1.1;color:var(--accent);font-variant-numeric:tabular-nums}
 .stats span{font-size:.83rem;color:var(--soft)}
 .badge{display:inline-block;font-size:.75rem;font-weight:600;padding:.16rem .5rem;border-radius:4px;margin:0 .3rem .3rem 0}
@@ -672,7 +752,7 @@ a.tile:hover{border-color:var(--accent)}a.tile span{color:var(--faint);font-size
 .row{display:flex;gap:1rem;align-items:flex-start}.row-main{flex:1;min-width:0}
 .row a{text-decoration:none;font-size:1.05rem}.row a:hover{text-decoration:underline}
 .src{font-size:.82rem;color:var(--faint);margin-top:.25rem}
-.crumbs{font-size:.85rem;color:var(--faint);margin-top:1rem}.crumbs a{color:var(--soft)}
+.crumbs{font-size:.85rem;color:var(--faint);margin-top:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.crumbs a{color:var(--soft)}
 .chips{display:flex;flex-wrap:wrap;gap:.4rem;margin:.9rem 0}
 .chip{font-size:.82rem;text-decoration:none;background:var(--card);border:1px solid var(--rule);padding:.3rem .65rem;border-radius:99px;color:var(--soft)}
 .chip:hover{border-color:var(--accent);color:var(--accent-d)}
@@ -708,6 +788,20 @@ footer .fine{font-size:.78rem;color:var(--faint)}
 .finder button{margin-top:0;height:2.6rem}
 .finder label.chk{display:flex;align-items:center;gap:.4rem;flex:0 0 auto;min-width:0;white-space:nowrap}
 .finder label.chk input{width:auto;margin:0}
+.list{background:var(--card);border:1px solid var(--rule);border-radius:9px;overflow:hidden;margin:.7rem 0}
+.list a.item{display:flex;gap:1rem;align-items:center;justify-content:space-between;padding:.8rem 1rem;text-decoration:none;color:var(--ink);border-top:1px solid var(--rule)}
+.list a.item:first-child{border-top:0}.list a.item:hover{background:var(--accent-bg)}
+.item-main{display:flex;flex-direction:column;min-width:0}.item-main b{color:var(--accent-d)}
+.item .meta{font-size:.82rem;color:var(--faint)}.item .badges{flex:0 0 auto;text-align:right}.item .badge{margin:.15rem 0 .15rem .3rem}
+@media(max-width:40rem){.list a.item{flex-direction:column;align-items:flex-start;gap:.35rem}.item .badges{text-align:left}.item .badge{margin:0 .3rem .2rem 0}}
+.summary{display:flex;gap:1rem;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:1rem}
+.summary .label{display:block;font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);font-weight:700}
+.summary .status{display:inline-block;font-size:1.15rem;font-weight:700;margin:.15rem 0 .4rem}
+.status.ok{color:var(--ok)}.status.warn{color:var(--warn)}.status.bad{color:var(--bad)}.status.mut{color:var(--mut)}
+.summary-actions{display:flex;gap:.5rem;flex-wrap:wrap}.summary-actions .btn{margin-top:0}
+.btn.ghost{border-color:var(--accent)}
+.letters{display:flex;flex-wrap:wrap;gap:.35rem .8rem;font-size:.92rem}.letters a{text-decoration:none;font-weight:600}
+@media(max-width:34rem){header.top .wrap{gap:.4rem}header nav{gap:.25rem .8rem;width:100%}header nav a.cta{margin-left:auto}}
 `;
 
 // ---------- write ----------
@@ -725,6 +819,8 @@ w("methodology.html", methodologyPage()); count++;
 w("texas-aba-access-report.html", reportPage()); count++;
 w("thanks.html", thanksPage()); count++;
 w("openings.html", openingsPage()); count++;
+w("cities.html", citiesPage()); count++;
+w("verified.html", verifiedPage()); count++;
 w("respond.html", respondPage()); count++;
 w("featured-thanks.html", layout(`You're featured | ${cfg.siteName}`, `
 <h1>Thank you — you're almost live</h1>
@@ -742,7 +838,7 @@ w("licenses.json", JSON.stringify(licenses.map((l) => [
   l.name, l.license_no, l.license_type?.includes("Assistant") ? "A" : "L", l.status === "active" ? "a" : "x", l.expires ?? "",
 ])));
 
-const urls = ["/", "/openings.html", "/lookup.html", "/for-clinics.html", "/methodology.html", "/texas-aba-access-report.html"];
+const urls = ["/", "/openings.html", "/cities.html", "/verified.html", "/lookup.html", "/for-clinics.html", "/methodology.html", "/texas-aba-access-report.html"];
 for (const c of cities) {
   mkdirSync(new URL(`tx/${c.city_slug}/`, OUT), { recursive: true });
   w(`tx/${c.city_slug}/index.html`, cityPage(c)); count++;
