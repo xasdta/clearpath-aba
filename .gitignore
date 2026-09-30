@@ -9,3 +9,4 @@ outreach/prospects.csv
 .vercel
 .env
 .secrets
+data/.token-secret

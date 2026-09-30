@@ -4,7 +4,7 @@
 <title>Thanks — response recorded | ABA Openings</title>
 <meta name="description" content="">
 <link rel="canonical" href="https://abaopenings.com/respond.html">
-<meta name="build" content="b5f1368 2026-09-02T02:36:57.542Z">
+<meta name="build" content="ecb9d2bd 2026-09-30T02:41:36.661Z">
 <meta property="og:title" content="Thanks — response recorded | ABA Openings"><meta property="og:description" content="">
 <link rel="stylesheet" href="./style.css?v=3">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><text y=%2226%22 font-size=%2228%22>%E2%9C%93</text></svg>">
@@ -19,7 +19,7 @@
 <h1 id="hd">Recording your answer…</h1>
 <p class="lede" id="msg">One moment.</p>
 <div class="card" id="detail" hidden>
-  <p><b>Thank you</b> — your listing will show this within a day, stamped with today's date.</p>
+  <p><b>Thank you</b> — your listing will show this within the hour, stamped with today's date.</p>
   <p class="src">We ask again in about a month. Families filter for clinics that can actually take a new client, so an up-to-date answer means fewer wasted calls for your intake team — and no calls at all when you're full.</p>
   <p><a class="btn" href="index.html">See the directory</a></p>
 </div>
@@ -27,36 +27,32 @@
   <p><b>That link didn't work.</b> It may have expired, or been copied incompletely.</p>
   <p>Email <a href="mailto:sabrsystemssoftware@gmail.com">sabrsystemssoftware@gmail.com</a> with your clinic name and whether you're accepting clients, and we'll update it by hand.</p>
 </div>
-<form id="f" style="display:none" action="https://api.web3forms.com/submit" method="POST">
-  <input type="hidden" name="access_key" value="2ca3084d-bf33-4be3-890a-b1ef68672dc1">
-  <input type="hidden" name="subject" value="CLINIC RESPONSE">
-  <input type="hidden" name="token" id="tok">
-  <input type="hidden" name="answer" id="ans">
-</form>
 <script>
 (function(){
-  var q=new URLSearchParams(location.search), t=q.get('t')||'';
-  var parts=t.split('.'), action='';
-  try{ action=JSON.parse(atob(parts[0].replace(/-/g,'+').replace(/_/g,'/'))).a||''; }catch(e){}
-  if(!t||parts.length!==2||!action){
-    document.getElementById('hd').textContent='We could not read that link';
-    document.getElementById('msg').textContent='';
-    document.getElementById('oops').hidden=false; return;
-  }
-  var open = action==='accepting';
-  document.getElementById('hd').textContent = open ? 'Marked as accepting new clients' : 'Marked as full';
-  document.getElementById('msg').textContent = open
-    ? 'Families searching your city will now see that you have room.'
-    : 'We will show your waitlist as closed, so families do not call for a slot you cannot fill.';
-  document.getElementById('detail').hidden=false;
-  var f=document.getElementById('f');
-  if(f){ document.getElementById('tok').value=t; document.getElementById('ans').value=action;
-    fetch(f.action,{method:'POST',body:new FormData(f)}).catch(function(){}); }
+  var t=new URLSearchParams(location.search).get("t")||"";
+  var MSG={
+    "accepting":["Marked as accepting new clients","Families searching your city will see that you have room within the hour.",1],
+    "full":["Marked as full","We will show your waitlist as closed, so families do not call for a slot you cannot fill.",1],
+    "claim-confirm":["Email confirmed","Thanks. We do a final review of every claim, usually the same day, and will email you when your listing is yours.",0],
+    "claim-approve":["Claim approved","Publishing now; the clinic has been emailed.",0],
+    "claim-reject":["Claim rejected","The claimant has been told politely. Nothing on the listing changed.",0]
+  };
+  function show(id){document.getElementById(id).hidden=false;}
+  function fail(){document.getElementById("hd").textContent="That link didn't work";document.getElementById("msg").textContent="";show("oops");}
+  if(!t){fail();return;}
+  fetch("/api/submit",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"respond",t:t})})
+    .then(function(r){return r.json();})
+    .then(function(r){
+      var m=r&&r.ok&&MSG[r.action]; if(!m){fail();return;}
+      document.getElementById("hd").textContent=m[0];
+      document.getElementById("msg").textContent=m[1];
+      if(m[2]) show("detail");
+    }).catch(fail);
 })();
 </script></main>
 <footer class="wrap">
   <p><b>How we verify.</b> Provider records come from the federal NPI registry; license status is matched against the Texas TDLR roster published on data.texas.gov and stamped with the date we checked it. Insurance acceptance and waitlist status are marked verified only after we confirm them directly with the clinic — anything unconfirmed says so. We publish license verification only when we can positively match an active license; we never assert that a clinic's license is invalid.</p>
   <p><b>How we make money.</b> Clinics may buy a flat monthly featured listing. Placement in the regular directory is never for sale, and we never take a fee per referral or per enrolled client.</p>
-  <p class="fine">ABA Openings is an independent directory. It is not medical advice and does not endorse any provider. Data last built 2026-09-02. Corrections: <a href="mailto:sabrsystemssoftware@gmail.com">sabrsystemssoftware@gmail.com</a></p>
+  <p class="fine">ABA Openings is an independent directory. It is not medical advice and does not endorse any provider. Data last built 2026-09-30. Corrections: <a href="mailto:sabrsystemssoftware@gmail.com">sabrsystemssoftware@gmail.com</a></p>
 </footer>
 </body></html>

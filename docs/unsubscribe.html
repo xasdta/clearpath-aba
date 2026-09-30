@@ -4,7 +4,7 @@
 <title>Unsubscribe | ABA Openings</title>
 <meta name="description" content="">
 <link rel="canonical" href="https://abaopenings.com/unsubscribe.html">
-<meta name="build" content="b5f1368 2026-09-02T02:36:57.542Z">
+<meta name="build" content="ecb9d2bd 2026-09-30T02:41:36.661Z">
 <meta property="og:title" content="Unsubscribe | ABA Openings"><meta property="og:description" content="">
 <link rel="stylesheet" href="./style.css?v=3">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><text y=%2226%22 font-size=%2228%22>%E2%9C%93</text></svg>">
@@ -18,11 +18,9 @@
 <main class="wrap">
 <h1>Unsubscribe</h1>
 <p class="lede">Enter the address that receives the alerts and we will stop them. No confirmation email, no "are you sure" — one submit and it is done.</p>
-<form class="card form" action="https://api.web3forms.com/submit" method="POST">
-       <input type="hidden" name="access_key" value="2ca3084d-bf33-4be3-890a-b1ef68672dc1">
-       <input type="hidden" name="subject" value="UNSUBSCRIBE">
-       <input type="hidden" name="redirect" value="https://abaopenings.com/thanks.html">
-       <input type="checkbox" name="botcheck" class="hidden" style="display:none">
+<form class="card form" action="/api/submit" method="POST">
+       <input type="hidden" name="kind" value="unsubscribe">
+       <input type="checkbox" name="botcheck" class="hidden" style="display:none" tabindex="-1" autocomplete="off">
   <label>Email address<input name="email" type="email" id="e" required></label>
   <button>Stop sending me alerts</button>
   <div class="src">We keep the address only on a suppression list, so nothing starts it again by accident.</div>
@@ -31,6 +29,6 @@
 <footer class="wrap">
   <p><b>How we verify.</b> Provider records come from the federal NPI registry; license status is matched against the Texas TDLR roster published on data.texas.gov and stamped with the date we checked it. Insurance acceptance and waitlist status are marked verified only after we confirm them directly with the clinic — anything unconfirmed says so. We publish license verification only when we can positively match an active license; we never assert that a clinic's license is invalid.</p>
   <p><b>How we make money.</b> Clinics may buy a flat monthly featured listing. Placement in the regular directory is never for sale, and we never take a fee per referral or per enrolled client.</p>
-  <p class="fine">ABA Openings is an independent directory. It is not medical advice and does not endorse any provider. Data last built 2026-09-02. Corrections: <a href="mailto:sabrsystemssoftware@gmail.com">sabrsystemssoftware@gmail.com</a></p>
+  <p class="fine">ABA Openings is an independent directory. It is not medical advice and does not endorse any provider. Data last built 2026-09-30. Corrections: <a href="mailto:sabrsystemssoftware@gmail.com">sabrsystemssoftware@gmail.com</a></p>
 </footer>
 </body></html>

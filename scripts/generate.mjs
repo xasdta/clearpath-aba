@@ -7,7 +7,7 @@
 // renders as "not confirmed" — we never publicly assert that a named business's license is
 // expired or invalid on the strength of a heuristic name match.
 
-import { readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, copyFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { openDb } from "../lib/db.mjs";
 
@@ -134,17 +134,12 @@ ${cfg.vercelAnalytics ? `<script defer src="/_vercel/insights/script.js"></scrip
 </body></html>`;
 }
 
-// form action helper (Web3Forms when configured, mailto fallback so nothing is ever broken)
-function formOpen(subject, redirectDepth = 0) {
-  const up = "../".repeat(redirectDepth) || "./";
-  return cfg.web3formsKey
-    ? `<form class="card form" action="https://api.web3forms.com/submit" method="POST">
-       <input type="hidden" name="access_key" value="${esc(cfg.web3formsKey)}">
-       <input type="hidden" name="subject" value="${esc(subject)}">
-       <input type="hidden" name="redirect" value="${base ? base + "/thanks.html" : up + "thanks.html"}">
-       <input type="checkbox" name="botcheck" class="hidden" style="display:none">`
-    : `<form class="card form" action="mailto:${esc(cfg.contactEmail)}" method="POST" enctype="text/plain">
-       <input type="hidden" name="subject" value="${esc(subject)}">`;
+// Every form posts to api/submit.mjs, which queues it for jobs/apply-inbox.mjs (see there).
+// kind selects the handler; botcheck is a honeypot that real visitors never see.
+function formOpen(kind) {
+  return `<form class="card form" action="/api/submit" method="POST">
+       <input type="hidden" name="kind" value="${esc(kind)}">
+       <input type="checkbox" name="botcheck" class="hidden" style="display:none" tabindex="-1" autocomplete="off">`;
 }
 
 // ---------- pages ----------
@@ -272,7 +267,7 @@ function alertSignup(cityLabel, citySlug, depth) {
   return `<div class="card highlight" id="alerts">
 <h2>Get told when a clinic opens up${cityLabel ? ` in ${esc(cityLabel)}` : ""}</h2>
 <p>Waitlists move without warning. Tell us what you need and we will email you when a clinic near you confirms an opening — no more calling ten clinics a month to ask.</p>
-${formOpen(`Openings alert signup${cityLabel ? ` — ${cityLabel}` : ""}`, depth)}
+${formOpen("alert")}
   <input type="hidden" name="alert_city" value="${esc(citySlug ?? "")}">
   <div class="f2"><label>Email<input name="email" type="email" required></label>
   <label>ZIP code<input name="zip" required></label></div>
@@ -333,14 +328,15 @@ ${pays.map((p) => `<tr><td>${esc(PAYERS[p.payer] ?? p.payer)}</td><td>${
 <div class="src">We mark a plan accepted only after confirming it with the clinic directly. Always re-confirm coverage before your first appointment — plan networks change.</div></div>
 
 <h2>Ask this provider about availability</h2>
-${formOpen(`Inquiry — ${o.name}`, 1)}
-  <input type="hidden" name="provider" value="${esc(o.name)} (NPI ${esc(o.npi)})">
+${formOpen("inquiry")}
+  <input type="hidden" name="npi" value="${esc(o.npi)}">
+  <input type="hidden" name="provider" value="${esc(o.name)}">
   <div class="f2"><label>Your name<input name="name" required></label><label>Email or phone<input name="contact" required></label></div>
   <div class="f2"><label>Insurance<select name="insurance">${Object.values(PAYERS).map((v) => `<option>${esc(v)}</option>`).join("")}<option>Other / self-pay</option></select></label>
   <label>Child's age<select name="child_age"><option>0-3</option><option>4-6</option><option>7-12</option><option>13+</option></select></label></div>
   <label>Anything else<textarea name="message" rows="3"></textarea></label>
   <button>Send inquiry</button>
-  <div class="src">Free for families. We pass your message to the provider${cfg.web3formsKey ? "" : " by email"} — we never sell family contact information.</div>
+  <div class="src">Free for families. We pass your message to the provider — we never sell family contact information.</div>
 </form>
 
 <div class="card cta-band"><div>Is this your clinic? Claim the profile free to fix your insurance list, add your waitlist, and answer inquiries.</div><a class="btn" href="../for-clinics.html">Claim this profile</a></div>
@@ -398,12 +394,12 @@ function forClinicsPage() {
 <li>Get license-verified: we match your director to the TDLR roster and date-stamp it.</li>
 <li>Receive family inquiries at no charge.</li></ul>
 <p><b>Claiming never affects your ranking.</b> We sort by confirmed availability and verified credentials — never by who pays.</p>
-${formOpen("Claim request")}
+${formOpen("claim")}
   <div class="f2"><label>Clinic name<input name="clinic" required></label><label>Your name<input name="name" required></label></div>
   <div class="f2"><label>Role<input name="role" placeholder="Owner / Clinical Director" required></label><label>Work email<input name="email" type="email" required></label></div>
   <div class="f2"><label>NPI or city<input name="npi" placeholder="10-digit NPI"></label><label>TX license #<input name="license" placeholder="BHV-XXXX"></label></div>
   <button>Claim our listing (free)</button>
-  <div class="src">We verify by matching your license and calling the clinic number on public record — not the number you submit.</div>
+  <div class="src">We check your license against the TDLR roster automatically, confirm your email, and review every claim before anything on your listing changes.</div>
 </form>
 </div>
 
@@ -415,7 +411,7 @@ ${formOpen("Claim request")}
 <li>Priority waitlist re-verification, so your availability never goes stale.</li></ul>
 <p class="src">For scale: agencies report about $45 per lead on paid search for ABA, and $8–$50 a click in Texas metros. One founding slot is roughly four leads' worth of ad spend — and one enrolled client is worth tens of thousands a year.</p>
 ${payBlock}
-<p class="src">Verified first, then billed: we confirm your license and your listing details before your slot goes live. Cancel anytime; no contract.</p>
+<p class="src">Your card goes live automatically once we confirm your director's license is active in the TDLR roster. If it can't be verified, you're refunded in full. Cancel anytime; no contract.</p>
 </div>
 </div>
 
@@ -573,7 +569,7 @@ function respondPage() {
 <h1 id="hd">Recording your answer…</h1>
 <p class="lede" id="msg">One moment.</p>
 <div class="card" id="detail" hidden>
-  <p><b>Thank you</b> — your listing will show this within a day, stamped with today's date.</p>
+  <p><b>Thank you</b> — your listing will show this within the hour, stamped with today's date.</p>
   <p class="src">We ask again in about a month. Families filter for clinics that can actually take a new client, so an up-to-date answer means fewer wasted calls for your intake team — and no calls at all when you're full.</p>
   <p><a class="btn" href="index.html">See the directory</a></p>
 </div>
@@ -581,31 +577,27 @@ function respondPage() {
   <p><b>That link didn't work.</b> It may have expired, or been copied incompletely.</p>
   <p>Email <a href="mailto:${esc(cfg.correctionsEmail)}">${esc(cfg.correctionsEmail)}</a> with your clinic name and whether you're accepting clients, and we'll update it by hand.</p>
 </div>
-${cfg.web3formsKey ? `<form id="f" style="display:none" action="https://api.web3forms.com/submit" method="POST">
-  <input type="hidden" name="access_key" value="${esc(cfg.web3formsKey)}">
-  <input type="hidden" name="subject" value="CLINIC RESPONSE">
-  <input type="hidden" name="token" id="tok">
-  <input type="hidden" name="answer" id="ans">
-</form>` : ""}
 <script>
 (function(){
-  var q=new URLSearchParams(location.search), t=q.get('t')||'';
-  var parts=t.split('.'), action='';
-  try{ action=JSON.parse(atob(parts[0].replace(/-/g,'+').replace(/_/g,'/'))).a||''; }catch(e){}
-  if(!t||parts.length!==2||!action){
-    document.getElementById('hd').textContent='We could not read that link';
-    document.getElementById('msg').textContent='';
-    document.getElementById('oops').hidden=false; return;
-  }
-  var open = action==='accepting';
-  document.getElementById('hd').textContent = open ? 'Marked as accepting new clients' : 'Marked as full';
-  document.getElementById('msg').textContent = open
-    ? 'Families searching your city will now see that you have room.'
-    : 'We will show your waitlist as closed, so families do not call for a slot you cannot fill.';
-  document.getElementById('detail').hidden=false;
-  var f=document.getElementById('f');
-  if(f){ document.getElementById('tok').value=t; document.getElementById('ans').value=action;
-    fetch(f.action,{method:'POST',body:new FormData(f)}).catch(function(){}); }
+  var t=new URLSearchParams(location.search).get("t")||"";
+  var MSG={
+    "accepting":["Marked as accepting new clients","Families searching your city will see that you have room within the hour.",1],
+    "full":["Marked as full","We will show your waitlist as closed, so families do not call for a slot you cannot fill.",1],
+    "claim-confirm":["Email confirmed","Thanks. We do a final review of every claim, usually the same day, and will email you when your listing is yours.",0],
+    "claim-approve":["Claim approved","Publishing now; the clinic has been emailed.",0],
+    "claim-reject":["Claim rejected","The claimant has been told politely. Nothing on the listing changed.",0]
+  };
+  function show(id){document.getElementById(id).hidden=false;}
+  function fail(){document.getElementById("hd").textContent="That link didn't work";document.getElementById("msg").textContent="";show("oops");}
+  if(!t){fail();return;}
+  fetch("/api/submit",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"respond",t:t})})
+    .then(function(r){return r.json();})
+    .then(function(r){
+      var m=r&&r.ok&&MSG[r.action]; if(!m){fail();return;}
+      document.getElementById("hd").textContent=m[0];
+      document.getElementById("msg").textContent=m[1];
+      if(m[2]) show("detail");
+    }).catch(fail);
 })();
 </script>`;
   return layout(`Thanks — response recorded | ${cfg.siteName}`, body, { canonical: "/respond.html" });
@@ -615,7 +607,7 @@ function unsubscribePage() {
   const body = `
 <h1>Unsubscribe</h1>
 <p class="lede">Enter the address that receives the alerts and we will stop them. No confirmation email, no "are you sure" — one submit and it is done.</p>
-${formOpen("UNSUBSCRIBE")}
+${formOpen("unsubscribe")}
   <label>Email address<input name="email" type="email" id="e" required></label>
   <button>Stop sending me alerts</button>
   <div class="src">We keep the address only on a suppression list, so nothing starts it again by accident.</div>
@@ -625,8 +617,12 @@ ${formOpen("UNSUBSCRIBE")}
 }
 
 const thanksPage = () => layout(`Thank you | ${cfg.siteName}`, `
-<h1>Got it — thank you</h1>
-<p class="lede">Your message is on its way. If you asked a provider about availability, they'll reach out directly. If you claimed a listing, we'll verify your license and call the clinic's number on public record, usually within two business days.</p>
+<h1 id="hd">Got it — thank you</h1>
+<p class="lede" id="msg">Your message is on its way. If you asked a provider about availability, we've passed it to them and emailed you a copy.</p>
+<script>(function(){var q=new URLSearchParams(location.search),h=document.getElementById("hd"),m=document.getElementById("msg");
+if(q.get("claim")){h.textContent="Check your email";m.textContent="We've checked your license against the Texas roster and sent you a link to confirm your email address. Click it to finish claiming your listing.";}
+else if(q.get("unsub")){h.textContent="You're unsubscribed";m.textContent="We won't send you any more alerts.";}
+else if(q.get("missing")){h.textContent="Something was missing";m.textContent="Please go back and fill in the required fields.";}})();</script>
 <p><a class="btn" href="index.html">Back to the directory</a></p>`, { canonical: "/thanks.html" });
 
 const notFoundPage = () => layout("Page not found | ${cfg.siteName}", `
@@ -730,6 +726,14 @@ w("texas-aba-access-report.html", reportPage()); count++;
 w("thanks.html", thanksPage()); count++;
 w("openings.html", openingsPage()); count++;
 w("respond.html", respondPage()); count++;
+w("featured-thanks.html", layout(`You're featured | ${cfg.siteName}`, `
+<h1>Thank you — you're almost live</h1>
+<p class="lede">We're checking your director's license against the Texas roster now. Once it's confirmed your featured card goes live automatically, usually within the hour, and we'll email you. If it can't be verified, you're refunded in full.</p>
+<p><a class="btn" href="for-clinics.html">Back to For clinics</a></p>`, { canonical: "/featured-thanks.html" })); count++;
+// docs/ is the Vercel root, so the serverless functions ship inside it (api/_* are helpers, not routes).
+mkdirSync(new URL("api/", OUT), { recursive: true });
+for (const f of readdirSync(new URL("api/", root)).filter((n) => n.endsWith(".mjs")))
+  copyFileSync(new URL(`api/${f}`, root), new URL(`api/${f}`, OUT));
 w("unsubscribe.html", unsubscribePage()); count++;
 w("404.html", notFoundPage()); count++;
 
@@ -784,4 +788,3 @@ console.log(`  ${orgs.length} providers · ${cities.length} cities · ${urls.len
 console.log(`  license-verified: ${verifiedOrgs.length} (${((verifiedOrgs.length / orgs.length) * 100).toFixed(1)}%)`);
 if (!cfg.domain) console.log("  NOTE: site.config.json domain is empty — canonicals/sitemap URLs are relative.");
 if (!cfg.stripeFeaturedLink) console.log("  NOTE: no Stripe link configured — featured CTA falls back to email.");
-if (!cfg.web3formsKey) console.log("  NOTE: no Web3Forms key — forms fall back to mailto.");

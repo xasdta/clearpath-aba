@@ -63,7 +63,6 @@ rather than shipping broken UI:
 |---|---|
 | `domain` | canonicals/sitemap use relative URLs |
 | `stripeFeaturedLink` | featured CTA falls back to an email link |
-| `web3formsKey` | forms fall back to `mailto:` |
 
 ## Deploy
 
@@ -86,7 +85,40 @@ rather than shipping broken UI:
 
 ## Automation
 
-Five jobs run on a schedule so the openings data maintains itself instead of depending on
+### Site events (forms, one-click links, Stripe) — no human in the loop except claim approval
+
+```
+browser / Stripe ──> docs/api/submit.mjs, stripe.mjs   (Vercel: validate + verify, then queue)
+                          │  one JSON file per event
+                          ▼
+             xasdta/abaopenings-inbox   (PRIVATE repo — family contact details never go public)
+                          │  every 10 min (launchd: com.abaopenings.inbox)
+                          ▼
+             jobs/apply-inbox.mjs   (Mac: rules + ops.db + email, then generate → commit → push)
+```
+
+| Event | Handled automatically |
+|---|---|
+| Clinic clicks "accepting" / "full" | availability recorded, listing rebuilt and pushed |
+| Family inquiry | forwarded to the clinic if we hold its email, else to the owner; family gets a copy |
+| Alert signup / unsubscribe | subscriber added / suppressed |
+| Claim | NPI + TDLR licence checked → claimant confirms email → **owner clicks Approve** → published, clinic enters the monthly ask loop |
+| Featured purchase ($199/mo payment link) | NPI, verified licence, city cap checked → card published, both sides emailed; otherwise refunded (automatic if `STRIPE_API_KEY` is set) |
+| Subscription ends | card removed |
+
+Claims keep one human click on purpose: a licence number is public, so nothing in a web form
+proves identity, and auto-publishing would let a stranger put their contact details on a
+competitor's listing.
+
+Source for the functions is `api/`; `generate.mjs` copies it into `docs/api/` because `docs/` is
+the Vercel root. Vercel env: `TOKEN_SECRET`, `INBOX_TOKEN` (Contents RW on the inbox repo only,
+expires 2027-09-29), `STRIPE_WEBHOOK_SECRET`. Mac `.env` (0600, gitignored): `TOKEN_SECRET`
+(same value), `MAIL_PROVIDER`, `MAIL_API_KEY`, `MAIL_FROM`, optional `STRIPE_API_KEY`. The Mac
+reads the inbox with the `gh` login.
+
+### Scheduled jobs
+
+These jobs run on a schedule so the openings data maintains itself instead of depending on
 anyone remembering. Install them with `./scripts/install-launchd.sh` (macOS launchd — chosen
 over cron because it re-runs missed jobs after the Mac wakes).
 
@@ -97,6 +129,7 @@ over cron because it re-runs missed jobs after the Mac wakes).
 | `license-expiry` | daily 09:05 | Warns a clinic 30 days before the licence behind its verified badge lapses |
 | `health-check` | daily 09:05 | Flags collapsed record counts, job failures, mail failures |
 | `owner-digest` | Mon 08:00 | Weekly summary: openings, calls, inquiries, claims, subscribers |
+| `apply-inbox` | every 10 min | Applies queued site events (above) |
 | `refresh.sh` | Mon 06:00 | Re-pull public records → rebuild → commit → push (Vercel redeploys) |
 
 Run any job by hand: `node jobs/run.mjs <name>` (or `all`).
@@ -120,23 +153,17 @@ Run any job by hand: `node jobs/run.mjs <name>` (or `all`).
 
 ### One-click responses
 
-Clinic emails contain signed, expiring tokens (`lib/tokens.mjs`, HMAC-SHA256, 45-day TTL,
-constant-time comparison). The link lands on `/respond.html`, which confirms the answer to the
-clinic and files the response. Apply it from the ops console at `/apply` — paste the token and
-the signature is verified before anything is written, so a forged or expired link changes
-nothing. Tampered, malformed and expired tokens are all rejected (verified by test).
+Clinic emails contain signed, expiring tokens (`api/_tokens.mjs`, HMAC-SHA256, 45-day TTL,
+constant-time comparison). The link lands on `/respond.html`, which posts it to `/api/submit`;
+the signature is verified there and again when the Mac applies it, so a forged or expired link
+changes nothing. The ops console's `/apply` page still works for a pasted token. Tampered, malformed and expired tokens are all rejected (verified by test).
 
 ### Enabling real sending
 
-```sh
-export MAIL_PROVIDER=resend        # or postmark
-export MAIL_API_KEY=...            # provider key
-export MAIL_FROM="ABA Openings <hello@abaopenings.com>"
-node jobs/run.mjs ask-clinics      # sends for real
-```
-
-Add the same variables to the launchd plists (`EnvironmentVariables`) for scheduled runs.
-Sending requires a verified domain at the provider (SPF/DKIM) — cold domains land in spam.
+Live since 2026-09-30: `.env` sets `MAIL_PROVIDER=resend` and sends from
+`hello@abaopenings.com` (domain verified in Resend; DKIM/SPF/DMARC records are in Vercel DNS).
+Every scheduled job reads `.env`, so nothing secret lives in the plists. Delete
+`MAIL_PROVIDER` from `.env` to drop back to dry run (messages go to `logs/outbox.log`).
 
 ### Where clinic email addresses come from
 
