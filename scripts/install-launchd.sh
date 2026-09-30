@@ -44,7 +44,7 @@ PLIST
 }
 
 if [ "${1:-install}" = "remove" ]; then
-  for n in com.abaopenings.jobs com.abaopenings.refresh com.abaopenings.digest com.abaopenings.inbox; do
+  for n in com.abaopenings.jobs com.abaopenings.refresh com.abaopenings.digest com.abaopenings.inbox com.abaopenings.outreach; do
     launchctl bootout "gui/$(id -u)/$n" 2>/dev/null || true
     rm -f "$AGENTS/$n.plist"
     echo "removed $n"
@@ -60,8 +60,10 @@ write_plist com.abaopenings.refresh 6 0 2 /bin/bash "$ROOT/scripts/refresh.sh"
 write_plist com.abaopenings.digest 8 0 2 "$NODE" "$ROOT/jobs/run.mjs" owner-digest
 # Every 10 min — apply queued form posts, one-click answers and Stripe payments
 write_plist com.abaopenings.inbox every:600 0 "" "$NODE" "$ROOT/jobs/apply-inbox.mjs"
+# Daily 10:05 — outreach batch (the script itself skips weekends and enforces the daily cap)
+write_plist com.abaopenings.outreach 10 5 "" "$NODE" "$ROOT/jobs/outreach.mjs" send
 
-for n in com.abaopenings.jobs com.abaopenings.refresh com.abaopenings.digest com.abaopenings.inbox; do
+for n in com.abaopenings.jobs com.abaopenings.refresh com.abaopenings.digest com.abaopenings.inbox com.abaopenings.outreach; do
   launchctl bootout "gui/$(id -u)/$n" 2>/dev/null || true
   launchctl bootstrap "gui/$(id -u)" "$AGENTS/$n.plist"
   echo "loaded $n"
@@ -72,6 +74,7 @@ echo "  daily  09:05  jobs (ask clinics, family alerts, licence nudges, health c
 echo "  Mon    06:00  data refresh + rebuild + push"
 echo "  Mon    08:00  owner digest"
 echo "  every  10 min apply inbox (forms, one-click answers, Stripe)"
+echo "  wkdy   10:05  clinic outreach batch (capped; see jobs/outreach.mjs)"
 echo
 echo "Secrets (TOKEN_SECRET, MAIL_*) are read from .env. Mail is in DRY RUN until MAIL_PROVIDER and MAIL_API_KEY are set there."
 echo "Check status:  launchctl list | grep abaopenings"

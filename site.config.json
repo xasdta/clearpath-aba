@@ -11,5 +11,8 @@
   "vercelAnalytics": true,
   "featuredSlotsPerCity": 3,
   "state": "TX",
-  "stateName": "Texas"
+  "stateName": "Texas",
+  "postalAddress": "Sabr Software · 3500 Oaklawn Ave. #460 · Dallas, TX 75219",
+  "senderName": "Sadat Khan",
+  "senderTitle": "Founder"
 }
