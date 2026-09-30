@@ -146,8 +146,55 @@ function licBadge(o) {
 const payerStatus = (siteKey, payer) => (payersBySite.get(siteKey) ?? []).find((p) => p.payer === payer);
 
 // ---------- layout ----------
+// Header navigation. The first four are what families come for; the rest sit under "More".
+const NAV = [["find", "index.html#find", "Find a clinic"], ["openings", "openings.html", "Openings"], ["cities", "cities.html", "Cities"], ["verified", "verified.html", "Verified clinics"]];
+const MORE = [["texas-aba-access-report.html", "Texas access report"], ["lookup.html", "License lookup"], ["methodology.html", "How we verify"]];
+const navKey = (canonical) =>
+  canonical === "/openings.html" ? "openings"
+  : canonical === "/cities.html" || canonical.startsWith("/tx/") ? "cities"
+  : canonical === "/verified.html" ? "verified"
+  : canonical === "/for-clinics.html" ? "clinics" : "";
+
+// Search box (header, mobile menu and the home page share one script, SEARCH_JS below).
+const searchBox = (id, placeholder, big = false) => `<div class="sitesearch ${id}${big ? " big" : ""}" role="search">
+    <label class="sr" for="${id}">${esc(placeholder)}</label>
+    <input id="${id}" type="search" placeholder="${esc(placeholder)}" autocomplete="off" maxlength="80">
+    <ul class="qres" hidden></ul></div>`;
+
+// Every page except home opens with the same band: breadcrumbs, title, summary, and anything
+// the page tags as .head-extra. Done here once instead of in fifteen templates.
+function wrapHead(body) {
+  const m = body.match(/^\s*((?:<nav class="crumbs">[\s\S]*?<\/nav>\s*)?<h1[^>]*>[\s\S]*?<\/h1>\s*(?:<p class="lede"[^>]*>[\s\S]*?<\/p>\s*)?(?:<div class="head-extra">[\s\S]*?<\/div><!--\/head-extra-->\s*)?)/);
+  return m ? `<section class="page-head">${m[1]}</section>${body.slice(m[0].length)}` : body;
+}
+
+// Client-side clinic search: matches every typed word against name + city in search.json.
+// Results are built with textContent only, so no clinic name can ever become markup.
+const SEARCH_JS = `(function(){
+  var data=null,base=location.pathname.replace(/[^/]*$/,"").replace(/(tx\\/[^/]+\\/|providers\\/)$/,"");
+  function norm(s){return s.toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").replace(/[^a-z0-9 ]/g," ").replace(/\\s+/g," ").trim();}
+  function load(){if(data)return Promise.resolve(data);return fetch("/search.json").then(function(r){return r.json();}).then(function(d){data=d.map(function(x){return{npi:x[0],name:x[1],city:x[2],k:norm(x[1]+" "+x[2])};});return data;});}
+  document.querySelectorAll(".sitesearch").forEach(function(box){
+    var q=box.querySelector("input"),out=box.querySelector(".qres"),t;
+    function render(list,term){
+      out.textContent="";if(!term){out.hidden=true;return;}
+      if(!list.length){var li=document.createElement("li");li.className="none";li.textContent="No clinic matches \\u201c"+term+"\\u201d";out.appendChild(li);}
+      list.slice(0,8).forEach(function(x){var li=document.createElement("li"),a=document.createElement("a"),b=document.createElement("b"),s=document.createElement("span");
+        a.href="/providers/"+encodeURIComponent(x.npi)+".html";b.textContent=x.name;s.textContent=x.city+", TX";a.appendChild(b);a.appendChild(s);li.appendChild(a);out.appendChild(li);});
+      out.hidden=false;}
+    function run(){var term=q.value.slice(0,80).trim(),w=norm(term).split(" ").filter(Boolean);if(!w.length){render([],"");return;}
+      load().then(function(d){render(d.filter(function(x){return w.every(function(v){return x.k.indexOf(v)!==-1;});}).sort(function(a,b){return (b.k.indexOf(w[0])===0)-(a.k.indexOf(w[0])===0)||a.name.localeCompare(b.name);}),term);}).catch(function(){});}
+    q.addEventListener("input",function(){clearTimeout(t);t=setTimeout(run,120);});
+    q.addEventListener("keydown",function(e){if(e.key==="Escape"){q.value="";render([],"");}if(e.key==="Enter"){var a=out.querySelector("a");if(a){e.preventDefault();location.href=a.href;}}});
+    document.addEventListener("click",function(e){if(!box.contains(e.target))out.hidden=true;});
+    var pre=box.classList.contains("big")&&new URLSearchParams(location.search).get("q");if(pre){q.value=pre.slice(0,80);run();}
+  });
+  document.querySelectorAll("details.more,details.mnav").forEach(function(d){document.addEventListener("click",function(e){if(!d.contains(e.target))d.removeAttribute("open");});});
+})();`;
+
 function layout(title, body, { desc = "", canonical = "", jsonld = null, depth = 0, noindex = false, noReferrer = false } = {}) {
   const up = "../".repeat(depth) || "./";
+  const active = navKey(canonical);
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -156,21 +203,44 @@ function layout(title, body, { desc = "", canonical = "", jsonld = null, depth =
 ${base && canonical ? `<link rel="canonical" href="${base}${canonical}">` : ""}
 <meta name="build" content="${esc(buildSha)} ${esc(buildStamp)}">
 <meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
-<link rel="stylesheet" href="${up}style.css?v=6">
+<link rel="stylesheet" href="${up}style.css?v=7">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><text y=%2226%22 font-size=%2228%22>%E2%9C%93</text></svg>">
 ${jsonld ? `<script type="application/ld+json">${JSON.stringify(jsonld)}</script>` : ""}
 ${cfg.vercelAnalytics ? `<script defer src="/_vercel/insights/script.js"></script>` : ""}
 </head><body>
-<header class="top"><div class="wrap">
-  <a class="brand" href="${up}index.html">ABA<span>Openings</span></a>
-  <nav><a href="${up}openings.html">Openings</a><a href="${up}texas-aba-access-report.html">Access report</a><a href="${up}lookup.html">License lookup</a><a href="${up}methodology.html">Methodology</a><a class="cta" href="${up}for-clinics.html">For clinics</a></nav>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><div class="wrap bar">
+  <a class="brand" href="${up}index.html" aria-label="${esc(cfg.siteName)} home"><span class="mark" aria-hidden="true">✓</span>ABA<span>Openings</span></a>
+  <nav class="primary" aria-label="Main">
+    ${NAV.map(([k, href, label]) => `<a href="${up}${href}"${k === active ? ' aria-current="page"' : ""}>${label}</a>`).join("")}
+    <details class="more"><summary>More</summary><div class="menu">${MORE.map(([href, label]) => `<a href="${up}${href}">${label}</a>`).join("")}</div></details>
+  </nav>
+  ${searchBox("hsearch", "Search clinics or cities")}
+  <a class="cta" href="${up}for-clinics.html"${active === "clinics" ? ' aria-current="page"' : ""}>For clinics</a>
+  <details class="mnav"><summary aria-label="Menu"><span></span><span></span><span></span></summary>
+    <div class="mpanel">
+      ${searchBox("msearch", "Search clinics or cities")}
+      ${NAV.map(([k, href, label]) => `<a href="${up}${href}"${k === active ? ' aria-current="page"' : ""}>${label}</a>`).join("")}
+      ${MORE.map(([href, label]) => `<a href="${up}${href}">${label}</a>`).join("")}
+      <a class="btn" href="${up}for-clinics.html">For clinics</a>
+    </div>
+  </details>
 </div></header>
-<main class="wrap">${body}</main>
-<footer class="wrap">
-  <p><b>How we verify.</b> Provider records come from the federal NPI registry; license status is matched against the Texas TDLR roster published on data.texas.gov and stamped with the date we checked it. Insurance acceptance and waitlist status are marked verified only after we confirm them directly with the clinic — anything unconfirmed says so. We publish license verification only when we can positively match an active license; we never assert that a clinic's license is invalid.</p>
-  <p><b>How we make money.</b> Clinics may buy a flat monthly featured listing. Placement in the regular directory is never for sale, and we never take a fee per referral or per enrolled client.</p>
-  <p class="fine">${esc(cfg.siteName)} is an independent directory. It is not medical advice and does not endorse any provider. Data last built ${today}. Corrections: <a href="mailto:${esc(cfg.correctionsEmail)}">${esc(cfg.correctionsEmail)}</a></p>
+<main class="wrap" id="main">${wrapHead(body)}</main>
+<footer class="site">
+  <div class="wrap fcols">
+    <div><a class="brand" href="${up}index.html"><span class="mark" aria-hidden="true">✓</span>ABA<span>Openings</span></a>
+      <p>Which Texas ABA clinics can take a new client — asked directly, dated, and re-checked every 30 days.</p></div>
+    <div><h4>Families</h4><a href="${up}index.html#find">Find a clinic</a><a href="${up}openings.html">Confirmed openings</a><a href="${up}cities.html">All cities</a><a href="${up}verified.html">License-verified clinics</a><a href="${up}lookup.html">License lookup</a></div>
+    <div><h4>Clinics</h4><a href="${up}for-clinics.html">Claim your listing</a><a href="${up}for-clinics.html#featured">Featured listings</a><a href="mailto:${esc(cfg.correctionsEmail)}">Report a correction</a></div>
+    <div><h4>About</h4><a href="${up}methodology.html">How we verify</a><a href="${up}texas-aba-access-report.html">Texas access report</a><a href="mailto:${esc(cfg.correctionsEmail)}">${esc(cfg.correctionsEmail)}</a></div>
+  </div>
+  <div class="wrap fine">
+    <p><b>How we make money.</b> Clinics may buy a flat monthly featured listing, always labeled. Placement in the regular directory is never for sale, and we never take a fee per referral or per enrolled client.</p>
+    <p>${esc(cfg.siteName)} is an independent directory built from the federal NPI registry and the Texas TDLR roster. It is not medical advice and does not endorse any provider. Data last built ${today}. <a href="#main">Back to top ↑</a></p>
+  </div>
 </footer>
+<script>${SEARCH_JS}</script>
 </body></html>`;
 }
 
@@ -300,19 +370,11 @@ function homePage() {
   ${texasMap()}
 </section>
 
-<div class="stats">
-  <a class="stat" href="openings.html"><b>${openCount}</b><span>clinics with confirmed openings</span><em>${openCount ? "See openings →" : "How it works →"}</em></a>
-  <a class="stat" href="openings.html#answered"><b>${askedCount.toLocaleString()}</b><span>clinics asked so far</span><em>See who answered →</em></a>
-  <a class="stat" href="cities.html"><b>${orgs.length.toLocaleString()}</b><span>ABA organizations statewide</span><em>Browse all cities →</em></a>
-  <a class="stat" href="verified.html"><b>${verifiedOrgs.length}</b><span>with a license-verified director</span><em>See verified clinics →</em></a>
-</div>
+
 
 <section class="card highlight" id="find">
   <h2>Find clinics near you</h2>
-  <label class="search">Search by clinic name or city
-    <input id="q" type="search" placeholder="e.g. Bright Path, or Round Rock" autocomplete="off" maxlength="80" aria-controls="qres">
-  </label>
-  <ul id="qres" class="qres" hidden></ul>
+  ${searchBox("q", "Search by clinic name or city — e.g. Bright Path, or Round Rock", true)}
   <p class="src or">or narrow by city and insurance:</p>
   <form class="finder" action="#" onsubmit="return cpGo(event)">
     <label>City<select id="cpCity">${cities.slice(0, 60).map((c) => `<option value="${c.city_slug}">${esc(c.city)} (${c.n})</option>`).join("")}</select></label>
@@ -320,40 +382,16 @@ function homePage() {
     <label class="chk"><input type="checkbox" id="cpOpen"> Only show clinics accepting now</label>
     <button>Search</button>
   </form>
-  <script>
-(function(){
-  var q=document.getElementById("q"),out=document.getElementById("qres"),data=null,timer;
-  function norm(s){return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim();}
-  function load(){ if(data) return Promise.resolve(data);
-    return fetch("search.json").then(function(r){return r.json();}).then(function(d){data=d.map(function(x){return {npi:x[0],name:x[1],city:x[2],k:norm(x[1]+" "+x[2])};});return data;}); }
-  function render(list,term){
-    out.textContent="";
-    if(!term){out.hidden=true;return;}
-    if(!list.length){var li=document.createElement("li");li.className="none";li.textContent="No clinic matches “"+term+"”. Try part of the name, or a city.";out.appendChild(li);}
-    list.slice(0,8).forEach(function(x){
-      var li=document.createElement("li"),a=document.createElement("a"),b=document.createElement("b"),sp=document.createElement("span");
-      a.href="providers/"+encodeURIComponent(x.npi)+".html";b.textContent=x.name;sp.textContent=x.city+", TX";
-      a.appendChild(b);a.appendChild(sp);li.appendChild(a);out.appendChild(li);
-    });
-    out.hidden=false;
-  }
-  var pre=new URLSearchParams(location.search).get("q");
-  if(pre){q.value=pre.slice(0,80);setTimeout(function(){q.dispatchEvent(new Event("input"));},0);}
-  q.addEventListener("input",function(){
-    clearTimeout(timer);
-    timer=setTimeout(function(){
-      var term=q.value.slice(0,80).trim(),words=norm(term).split(" ").filter(Boolean);
-      if(!words.length){render([],"");return;}
-      load().then(function(d){
-        render(d.filter(function(x){return words.every(function(w){return x.k.indexOf(w)!==-1;});})
-          .sort(function(a,b){return (b.k.indexOf(words[0])===0)-(a.k.indexOf(words[0])===0)||a.name.localeCompare(b.name);}),term);
-      }).catch(function(){});
-    },120);
-  });
-})();
-function cpGo(e){e.preventDefault();var c=document.getElementById('cpCity').value,p=document.getElementById('cpPayer').value,o=document.getElementById('cpOpen').checked;location.href='tx/'+c+'/'+(o?'accepting-now.html':(p?'accepts-'+p+'.html':'index.html'));return false}</script>
+  <script>function cpGo(e){e.preventDefault();var c=document.getElementById('cpCity').value,p=document.getElementById('cpPayer').value,o=document.getElementById('cpOpen').checked;location.href='tx/'+c+'/'+(o?'accepting-now.html':(p?'accepts-'+p+'.html':'index.html'));return false}</script>
   <p class="src" style="margin-top:.6rem">Or see <a href="openings.html"><b>every confirmed opening in Texas</b></a> on one page.</p>
 </section>
+
+<div class="stats">
+  <a class="stat" href="openings.html"><b>${openCount}</b><span>clinics with confirmed openings</span><em>${openCount ? "See openings →" : "How it works →"}</em></a>
+  <a class="stat" href="openings.html#answered"><b>${askedCount.toLocaleString()}</b><span>clinics asked so far</span><em>See who answered →</em></a>
+  <a class="stat" href="cities.html"><b>${orgs.length.toLocaleString()}</b><span>ABA organizations statewide</span><em>Browse all cities →</em></a>
+  <a class="stat" href="verified.html"><b>${verifiedOrgs.length}</b><span>with a license-verified director</span><em>See verified clinics →</em></a>
+</div>
 
 <h2>Browse by city</h2>
 <div class="grid">${topCities.map((c) => {
@@ -414,12 +452,18 @@ function cityPage(c, payer = null, openOnly = false) {
         : `No ${esc(c.city)} clinic has confirmed openings with us in the last 90 days. That is an honest gap in our data, not proof that everyone is full — we are working down the call list. Set an alert below and we will email you the moment one opens.`)
     : `${ranked.length} provider${ranked.length === 1 ? "" : "s"} compiled from public records${openCount ? `, ${openCount} with confirmed openings right now` : ""}. ${payer ? `Insurance acceptance is confirmed by phone before we show it as accepted — insurer directories are wrong often enough that regulators call them ghost networks.` : `Sorted so clinics that can actually take your child come first.`}`}</p>
 
-${openOnly ? "" : `<div class="chips"><a class="chip open" href="accepting-now.html">✓ Accepting new clients${openCount ? ` (${openCount})` : ""}</a>${payer || c.n < MIN_SITES_FOR_PAYER_PAGE ? "" : Object.entries(PAYERS).map(([k, v]) => `<a class="chip" href="accepts-${k}.html">Accepts ${esc(v)}</a>`).join("")}</div>`}
+<div class="head-extra">
+<div class="pills"><span class="pill"><b>${sites.length}</b> providers</span><span class="pill"><b>${sites.filter((o) => o.ao_license_status === "active").length}</b> license-verified</span><span class="pill ${openCount ? "ok" : ""}"><b>${openCount}</b> accepting now</span></div>
+</div><!--/head-extra-->
+${openOnly ? "" : `<div class="chips sticky"><a class="chip open" href="accepting-now.html">✓ Accepting new clients${openCount ? ` (${openCount})` : ""}</a>${payer || c.n < MIN_SITES_FOR_PAYER_PAGE ? "" : Object.entries(PAYERS).map(([k, v]) => `<a class="chip" href="accepts-${k}.html">Accepts ${esc(v)}</a>`).join("")}</div>`}
 
 ${feats.length ? `<h2 class="fh">Featured providers <span class="src">· paid placement, always labeled</span></h2>
 <div class="grid feats">${feats.map((f) => featuredCard(f, "../../")).join("")}</div>` : ""}
 
-<h2>${openOnly ? "Confirmed openings" : `All providers${payer ? ` accepting ${esc(PAYERS[payer])}` : ""}`}</h2>
+<div class="listhead" id="list">
+  <h2>${openOnly ? "Confirmed openings" : `All providers${payer ? ` accepting ${esc(PAYERS[payer])}` : ""}`} <span class="src">(<span class="fcount">${ranked.length}</span>)</span></h2>
+  ${ranked.length > 8 ? `<div class="filterbox"><label class="sr" for="f-list">Filter this list</label><input id="f-list" type="search" placeholder="Filter by name, street or ZIP" autocomplete="off" maxlength="60"></div>` : ""}
+</div>
 ${providerList(ranked, "../../", (o) => {
     if (!payer) return "";
     const p = payerStatus(o.site_key, payer);
@@ -428,7 +472,10 @@ ${providerList(ranked, "../../", (o) => {
       : `<span class="badge warn">${esc(PAYERS[payer])} not yet verified</span>`;
   })}
 
+<p class="notice fnone" hidden>No clinic in this list matches that filter.</p>
 ${ranked.length === 0 && !openOnly ? `<div class="notice">No providers listed here yet.</div>` : ""}
+<script>(function(){var f=document.getElementById("f-list");if(!f)return;var rows=[].slice.call(document.querySelectorAll(".list a.item")),c=document.querySelector(".fcount"),none=document.querySelector(".fnone");
+f.addEventListener("input",function(){var w=f.value.toLowerCase().trim().split(/\s+/).filter(Boolean),n=0;rows.forEach(function(r){var k=r.textContent.toLowerCase(),ok=w.every(function(x){return k.indexOf(x)!==-1;});r.hidden=!ok;if(ok)n++;});c.textContent=n;none.hidden=n>0;});})();</script>
 ${alertSignup(c.city, c.city_slug, 2)}
 <div class="card cta-band"><div>Run a clinic in ${esc(c.city)}? Claim your profile free, then keep your openings current so families can find you.</div><a class="btn" href="../../for-clinics.html">Claim your listing</a></div>`;
 
@@ -472,27 +519,13 @@ function providerPage(o) {
 <nav class="crumbs"><a href="../index.html">Home</a> › <a href="../tx/${o.city_slug}/index.html">${esc(o.city)}</a> › <span>${esc(o.name)}</span></nav>
 <h1>${esc(o.name)}</h1>
 <p class="lede">${esc(o.address1 ?? "")} · ${esc(o.city)}, TX ${esc(o.zip ?? "")}</p>
-<div class="card summary">
-  <div class="summary-status">
-    <span class="label">Taking new clients?</span>
-    <span class="status ${av.cls}">${esc(av.label)}</span>
-    <div class="badges">${featuredBy.has(o.npi) ? `<span class="badge feat-b">Featured</span>` : ""}${licBadge(o)}${claim ? `<span class="badge ok">Claimed profile</span>` : `<span class="badge mut">Unclaimed</span>`}</div>
-    ${featuredBy.get(o.npi)?.blurb ? `<p class="feat-blurb">${esc(featuredBy.get(o.npi).blurb)}</p>` : ""}
-  </div>
-  <div class="summary-actions">
-    ${(claim?.phone ?? o.phone) ? `<a class="btn" href="tel:${esc(String(claim?.phone ?? o.phone).replace(/[^0-9+]/g, ""))}">Call ${esc(claim?.phone ?? o.phone)}</a>` : ""}
-    ${httpUrl(featuredBy.get(o.npi)?.website) ? `<a class="btn ghost" href="${esc(featuredBy.get(o.npi).website)}" rel="sponsored nofollow noopener" target="_blank">Website ↗</a>` : ""}
-    <a class="btn ghost" href="#ask">Ask about availability</a>
-  </div>
-</div>
-
-${claim ? `<div class="card claimed"><h2>From the provider</h2>
-  ${claim.website ? `<p><a href="${esc(claim.website)}" rel="nofollow">${esc(claim.website)}</a></p>` : ""}
-  ${claim.service_area ? `<p><b>Service area:</b> ${esc(claim.service_area)}</p>` : ""}
-  ${claim.ages_served ? `<p><b>Ages served:</b> ${esc(claim.ages_served)}</p>` : ""}
-  <div class="src">Claimed and identity-verified ${esc(claim.claimed_date)}. Claiming is free and does not affect ranking.</div></div>` : ""}
-
-<h2>Credential verification</h2>
+<div class="head-extra">
+<div class="pills">${featuredBy.has(o.npi) ? `<span class="pill feat">Featured</span>` : ""}<span class="pill ${av.cls}">${esc(av.label)}</span>${o.ao_license_status === "active" ? `<span class="pill ok">License verified</span>` : `<span class="pill">License not confirmed</span>`}${claim ? `<span class="pill ok">Claimed</span>` : ""}</div>
+</div><!--/head-extra-->
+<nav class="sectnav" aria-label="On this page"><a href="#availability">Availability</a><a href="#credentials">Credentials</a><a href="#insurance">Insurance</a><a href="#ask">Ask the clinic</a></nav>
+<div class="pgrid">
+<div class="pmain">
+<h2 id="credentials">Credential verification</h2>
 ${o.legal_name !== o.name.toUpperCase() ? `<p class="src">Registered with the NPI registry as ${esc(o.legal_name)}.</p>` : ""}
 <div class="card">
 ${o.ao_license_status === "active" ? `
@@ -508,7 +541,7 @@ ${o.ao_license_status === "active" ? `
   <div class="src">You can check any name yourself in the <a href="../lookup.html">state license lookup</a>. Provider: <a href="../for-clinics.html">claim this profile</a> to get verified.</div>`}
 </div>
 
-<h2>Insurance</h2>
+<h2 id="insurance">Insurance</h2>
 <div class="card"><table>
 <tr><th>Plan</th><th>Status</th></tr>
 ${pays.map((p) => `<tr><td>${esc(PAYERS[p.payer] ?? p.payer)}</td><td>${
@@ -530,8 +563,30 @@ ${formOpen("inquiry")}
   <div class="src">Free for families. We pass your message to the provider — we never sell family contact information.</div>
 </form>
 
-<div class="card cta-band"><div>Is this your clinic? Claim the profile free to fix your insurance list, add your waitlist, and answer inquiries.</div><a class="btn" href="../for-clinics.html">Claim this profile</a></div>
-<p class="src">Something wrong here? <a href="mailto:${esc(cfg.correctionsEmail)}?subject=Correction%20for%20NPI%20${esc(o.npi)}">Report a correction</a> — we re-verify by phone and update the date stamp.</p>`;
+</div>
+<aside class="pside"><div class="card summary" id="availability">
+  <div class="summary-status">
+    <span class="label">Taking new clients?</span>
+    <span class="status ${av.cls}">${esc(av.label)}</span>
+    <div class="badges">${featuredBy.has(o.npi) ? `<span class="badge feat-b">Featured</span>` : ""}${licBadge(o)}${claim ? `<span class="badge ok">Claimed profile</span>` : `<span class="badge mut">Unclaimed</span>`}</div>
+    ${featuredBy.get(o.npi)?.blurb ? `<p class="feat-blurb">${esc(featuredBy.get(o.npi).blurb)}</p>` : ""}
+  </div>
+  <div class="summary-actions">
+    ${(claim?.phone ?? o.phone) ? `<a class="btn" href="tel:${esc(String(claim?.phone ?? o.phone).replace(/[^0-9+]/g, ""))}">Call ${esc(claim?.phone ?? o.phone)}</a>` : ""}
+    ${httpUrl(featuredBy.get(o.npi)?.website) ? `<a class="btn ghost" href="${esc(featuredBy.get(o.npi).website)}" rel="sponsored nofollow noopener" target="_blank">Website ↗</a>` : ""}
+    <a class="btn ghost" href="#ask">Ask about availability</a>
+  </div>
+</div>
+
+${claim ? `<div class="card claimed"><h2>From the provider</h2>
+  ${claim.website ? `<p><a href="${esc(claim.website)}" rel="nofollow">${esc(claim.website)}</a></p>` : ""}
+  ${claim.service_area ? `<p><b>Service area:</b> ${esc(claim.service_area)}</p>` : ""}
+  ${claim.ages_served ? `<p><b>Ages served:</b> ${esc(claim.ages_served)}</p>` : ""}
+  <div class="src">Claimed and identity-verified ${esc(claim.claimed_date)}. Claiming is free and does not affect ranking.</div></div>` : ""}
+<div class="card side-claim"><b>Is this your clinic?</b><p>Claim it free to keep your openings and insurance current and receive family inquiries.</p><a class="btn ghost" href="../for-clinics.html">Claim this profile</a></div>
+</aside>
+</div>
+<p class="src">Something wrong here? <a href="mailto:${esc(cfg.correctionsEmail)}?subject=Correction%20for%20NPI%20${esc(o.npi)}">Report a correction</a> — we re-verify with the clinic and update the date stamp.</p>`;
 
   return layout(`${o.name} — ABA Therapy in ${o.city}, TX | ${cfg.siteName}`, body, {
     desc: `${o.name} in ${o.city}, Texas: license verification, insurance acceptance, and current waitlist status for ABA therapy.`,
@@ -594,7 +649,7 @@ ${formOpen("claim")}
 </form>
 </div>
 
-<div class="card"><h2>Featured listing — founding rate</h2>
+<div class="card" id="featured"><h2>Featured listing — founding rate</h2>
 <p class="price"><b>$${cfg.featuredPriceMonthly}/month</b>, locked for as long as you stay subscribed. Standard rate will be $${cfg.featuredPriceStandard}.</p>
 <ul><li>Top placement on your city page and on the insurance pages you serve.</li>
 <li>Only ${cfg.featuredSlotsPerCity} slots per city — we cap them so the page stays useful.</li>
@@ -627,8 +682,8 @@ function methodologyPage() {
 <tr><th>Layer</th><th>Source</th><th>Refresh</th></tr>
 <tr><td>Provider organizations</td><td>NPPES / NPI Registry, taxonomy 103K00000X (Behavior Analyst), organizational NPIs in Texas</td><td>Weekly</td></tr>
 <tr><td>License status</td><td>Texas TDLR licensing roster published on data.texas.gov (dataset 7358-krk7) — ${licenses.length.toLocaleString()} behavior-analyst records, ${activeLicenses.length.toLocaleString()} active</td><td>Weekly</td></tr>
-<tr><td>Insurance acceptance</td><td>Confirmed by phone with the clinic; payer directories used only as a starting list</td><td>Every 6 months, or on claim</td></tr>
-<tr><td>Waitlist status</td><td>Asked directly; expires after 90 days by design</td><td>Quarterly</td></tr>
+<tr><td>Insurance acceptance</td><td>Confirmed directly with the clinic — by phone, or through a signed one-click link we email to the clinic\'s verified address</td><td>Whenever the clinic updates it</td></tr>
+<tr><td>Waitlist status</td><td>Asked directly, by phone or a one-click email; shown as current for 30 days and dropped after 90</td><td>Every 30 days (14 for featured clinics)</td></tr>
 </table></div>
 
 <h2>How license matching works</h2>
@@ -928,13 +983,13 @@ const notFoundPage = () => layout("Page not found | ${cfg.siteName}", `
 // ---------- css ----------
 const CSS = `:root{--ink:#182529;--soft:#4f6167;--faint:#87979c;--accent:#0d6b5b;--accent-d:#0a5347;--accent-bg:#e5f1ee;
 --ok:#0d6b5b;--ok-bg:#e5f1ee;--warn:#8a5a15;--warn-bg:#f7edda;--bad:#94413a;--bad-bg:#f6e5e2;--mut:#5d6d72;--mut-bg:#edf0f0;
---rule:#dde5e3;--bg:#fbfcfb;--card:#fff;--feat:#7a5b12;--feat-bg:#faf1d8;--viz:#0a8a6c;--land:#eef4f2;--hero:linear-gradient(160deg,#e5f1ee 0%,#fbfcfb 60%)}
+--rule:#dde5e3;--bg:#fbfcfb;--card:#fff;--feat:#7a5b12;--feat-bg:#faf1d8;--shadow:0 1px 2px rgba(24,37,41,.05),0 2px 8px rgba(24,37,41,.04);--shadow-lg:0 12px 32px rgba(24,37,41,.14);--viz:#0a8a6c;--land:#eef4f2;--hero:linear-gradient(160deg,#e5f1ee 0%,#fbfcfb 60%)}
 @media(prefers-color-scheme:dark){:root{--ink:#e7ecea;--soft:#a9b7b8;--faint:#7d8c8f;--accent:#5fbfa8;--accent-d:#7fd0bb;--accent-bg:#12302a;
 --ok:#5fbfa8;--ok-bg:#12302a;--warn:#d6ab5f;--warn-bg:#2f2716;--bad:#d1867c;--bad-bg:#331f1d;--mut:#9aa8ab;--mut-bg:#212a2c;
---rule:#2c3739;--bg:#12181a;--card:#182022;--feat:#d9b976;--feat-bg:#2b2515;--viz:#22a883;--land:#1a2426;--hero:linear-gradient(160deg,#153029 0%,#12181a 65%)}}
+--rule:#2c3739;--bg:#12181a;--card:#182022;--feat:#d9b976;--feat-bg:#2b2515;--shadow:0 1px 2px rgba(0,0,0,.25);--shadow-lg:0 14px 36px rgba(0,0,0,.45);--viz:#22a883;--land:#1a2426;--hero:linear-gradient(160deg,#153029 0%,#12181a 65%)}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
-.wrap{max-width:62rem;margin:0 auto;padding:0 1.1rem}
+.wrap{max-width:68rem;margin:0 auto;padding:0 1.1rem}
 a{color:var(--accent-d)}
 header.top{background:var(--card);border-bottom:1px solid var(--rule);position:sticky;top:0;z-index:5}
 header.top .wrap{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding-top:.7rem;padding-bottom:.7rem;flex-wrap:wrap}
@@ -1013,13 +1068,84 @@ button:hover,.btn:hover{background:var(--accent-d)}
 .chart .bar b{position:absolute;top:-1rem;font-size:.7rem;color:var(--soft);font-variant-numeric:tabular-nums}
 .lookup-out{margin-top:.8rem;max-height:26rem;overflow:auto}
 label.wide{display:block;font-size:.88rem;color:var(--soft)}
-footer{border-top:1px solid var(--rule);padding:1.3rem 1.1rem 3rem;font-size:.86rem;color:var(--soft);max-width:62rem;margin:2rem auto 0}
-footer .fine{font-size:.78rem;color:var(--faint)}
 .finder{display:flex;gap:.7rem;align-items:flex-end;flex-wrap:wrap}
 .finder label{font-size:.85rem;color:var(--soft);flex:1;min-width:11rem}
 .finder button{margin-top:0;height:2.6rem}
 .finder label.chk{display:flex;align-items:center;gap:.4rem;flex:0 0 auto;min-width:0;white-space:nowrap}
 .finder label.chk input{width:auto;margin:0}
+
+/* ---- 2026-09 redesign ---- */
+html{scroll-behavior:smooth;scroll-padding-top:5.5rem}
+body{font-size:16.5px;line-height:1.65}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.skip{position:absolute;left:-999px;top:.5rem;background:var(--accent);color:#fff;padding:.4rem .8rem;border-radius:6px;z-index:20}.skip:focus{left:.5rem}
+header.top{background:color-mix(in srgb,var(--card) 88%,transparent);backdrop-filter:saturate(1.4) blur(10px);-webkit-backdrop-filter:saturate(1.4) blur(10px)}
+header.top .bar{display:flex;align-items:center;gap:1.1rem;padding-top:.6rem;padding-bottom:.6rem;flex-wrap:nowrap}
+.brand{display:inline-flex;align-items:center;gap:.1rem;flex:0 0 auto}
+.brand .mark{display:inline-grid;place-items:center;width:1.7rem;height:1.7rem;margin-right:.45rem;border-radius:7px;background:var(--accent);color:#fff;font-size:.95rem;font-weight:800}
+nav.primary{display:flex;align-items:center;gap:.2rem;margin-left:.6rem}
+nav.primary a,nav.primary summary{font-size:.92rem;color:var(--soft);text-decoration:none;padding:.4rem .65rem;border-radius:7px;cursor:pointer;list-style:none}
+nav.primary summary::-webkit-details-marker{display:none}nav.primary summary::after{content:"▾";font-size:.75em;margin-left:.3rem}
+nav.primary a:hover,nav.primary summary:hover{background:var(--accent-bg);color:var(--accent-d)}
+nav.primary a[aria-current]{color:var(--accent-d);background:var(--accent-bg);font-weight:600}
+details.more{position:relative;display:flex;align-items:center;margin:0}
+nav.primary>a,nav.primary summary{display:inline-flex;align-items:center;height:2.1rem;margin:0;line-height:1}
+details.more .menu{position:absolute;top:calc(100% + .4rem);left:0;min-width:13rem;background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:.35rem;box-shadow:var(--shadow-lg);z-index:30;display:flex;flex-direction:column}
+details.more .menu a{padding:.5rem .7rem}
+.sitesearch{position:relative}
+.sitesearch input{margin:0}
+.hsearch{flex:1;max-width:17rem;margin-left:auto}
+.hsearch input{padding:.42rem .7rem .42rem 2rem;font-size:.9rem;border-radius:99px;background:var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%2387979c' stroke-width='2'%3E%3Ccircle cx='7' cy='7' r='5'/%3E%3Cpath d='m11 11 4 4'/%3E%3C/svg%3E") no-repeat .65rem 50%}
+.sitesearch .qres{position:absolute;left:0;right:0;top:calc(100% + .35rem);z-index:40;box-shadow:var(--shadow-lg);min-width:18rem}
+.sitesearch.big .qres{position:static;box-shadow:none}
+.sitesearch.big input{font-size:1.05rem;padding:.75rem .9rem .75rem 2.4rem;background:var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' fill='none' stroke='%2387979c' stroke-width='2'%3E%3Ccircle cx='8' cy='8' r='6'/%3E%3Cpath d='m12.5 12.5 4 4'/%3E%3C/svg%3E") no-repeat .8rem 50%}
+header.top .cta{flex:0 0 auto;background:var(--accent);color:#fff;padding:.42rem .85rem;border-radius:8px;font-weight:600;font-size:.9rem;text-decoration:none}
+header.top .cta:hover{background:var(--accent-d)}
+details.mnav{display:none;margin-left:auto}
+details.mnav summary{list-style:none;cursor:pointer;display:flex;flex-direction:column;gap:4px;padding:.55rem .5rem;border:1px solid var(--rule);border-radius:8px}
+details.mnav summary::-webkit-details-marker{display:none}
+details.mnav summary span{display:block;width:18px;height:2px;background:var(--ink);border-radius:2px}
+details.mnav .mpanel{position:absolute;left:0;right:0;top:100%;background:var(--card);border-bottom:1px solid var(--rule);box-shadow:var(--shadow-lg);padding:.8rem 1.1rem 1.1rem;display:flex;flex-direction:column;gap:.1rem}
+details.mnav .mpanel a{padding:.6rem .2rem;border-bottom:1px solid var(--rule);color:var(--ink);text-decoration:none}
+details.mnav .mpanel a[aria-current]{color:var(--accent-d);font-weight:600}
+details.mnav .mpanel .btn{margin-top:.8rem;border:0;text-align:center;color:#fff}
+details.mnav .sitesearch{margin-bottom:.4rem}
+@media(max-width:62rem){nav.primary,.hsearch{display:none}details.mnav{display:block}header.top .bar{gap:.6rem}header.top .cta{margin-left:auto}details.mnav{margin-left:0}}
+@media(max-width:26rem){header.top .cta{display:none}details.mnav{margin-left:auto}}
+.page-head{margin:1rem 0 1.4rem;padding:1.3rem 1.5rem 1.4rem;border:1px solid var(--rule);border-radius:14px;background:var(--hero)}
+.page-head .crumbs{margin:0 0 .3rem}.page-head h1{margin:.2rem 0 .4rem}.page-head .lede{margin-bottom:.2rem}
+.head-extra{margin-top:.8rem}
+.pills{display:flex;flex-wrap:wrap;gap:.4rem}
+.pill{font-size:.84rem;padding:.28rem .7rem;border-radius:99px;background:var(--card);border:1px solid var(--rule);color:var(--soft)}
+.pill b{color:var(--ink)}.pill.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,var(--rule))}
+.pill.warn{color:var(--warn)}.pill.bad{color:var(--bad)}.pill.mut{color:var(--mut)}.pill.feat{color:var(--feat);border-color:var(--feat)}
+.card{border-radius:12px;box-shadow:var(--shadow)}
+h2{font-size:1.3rem;margin-top:2.2rem}
+.chips.sticky{position:sticky;top:3.6rem;z-index:4;background:var(--bg);padding:.5rem 0;margin:.2rem 0 .6rem;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.chips.sticky::-webkit-scrollbar{display:none}.chips.sticky .chip{white-space:nowrap}
+.listhead{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-top:1.6rem}
+.listhead h2{margin:0}.filterbox{flex:0 1 20rem}.filterbox input{margin:0;border-radius:99px;padding:.45rem .9rem}
+.list{box-shadow:var(--shadow);border-radius:12px}
+.sectnav{position:sticky;top:3.6rem;z-index:4;display:flex;gap:.3rem;overflow-x:auto;scrollbar-width:none;background:var(--bg);padding:.45rem 0;margin:-.4rem 0 .4rem;border-bottom:1px solid var(--rule)}
+.sectnav a{white-space:nowrap;font-size:.88rem;text-decoration:none;color:var(--soft);padding:.35rem .75rem;border-radius:99px}
+.sectnav a:hover{background:var(--accent-bg);color:var(--accent-d)}
+.pgrid{display:grid;grid-template-columns:minmax(0,1fr) 20rem;gap:1.4rem;align-items:start}
+.pmain>h2:first-child{margin-top:1rem}
+.pside{position:sticky;top:7rem;display:flex;flex-direction:column;gap:.8rem;margin-top:1rem}
+.pside .summary{flex-direction:column;align-items:stretch;margin:0}
+.pside .summary-actions{flex-direction:column}.pside .summary-actions .btn{text-align:center}
+.side-claim{margin:0}.side-claim p{font-size:.9rem;color:var(--soft);margin:.3rem 0 .6rem}.side-claim .btn{margin:0}
+@media(max-width:56rem){.pgrid{grid-template-columns:1fr}.pside{position:static;order:-1;margin-top:.4rem}}
+footer.site{border-top:1px solid var(--rule);margin-top:3.5rem;padding:2.2rem 0 2.5rem;background:var(--card)}
+.fcols{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:1.5rem}
+.fcols p{font-size:.88rem;color:var(--soft);margin-top:.6rem;max-width:22rem}
+.fcols h4{margin:0 0 .5rem;font-size:.78rem;letter-spacing:.07em;text-transform:uppercase;color:var(--faint)}
+.fcols a:not(.brand){display:block;font-size:.9rem;color:var(--soft);text-decoration:none;padding:.18rem 0}.fcols a:not(.brand):hover{color:var(--accent-d)}
+footer.site .fine{margin-top:1.6rem;padding-top:1.1rem;border-top:1px solid var(--rule);font-size:.8rem;color:var(--faint)}
+footer.site .fine p{margin:0 0 .5rem}
+@media(max-width:46rem){.fcols{grid-template-columns:1fr 1fr}.fcols>div:first-child{grid-column:1/-1}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
 .list{background:var(--card);border:1px solid var(--rule);border-radius:9px;overflow:hidden;margin:.7rem 0}
 .list a.item{display:flex;gap:1rem;align-items:center;justify-content:space-between;padding:.8rem 1rem;text-decoration:none;color:var(--ink);border-top:1px solid var(--rule)}
 .list a.item:first-child{border-top:0}.list a.item:hover{background:var(--accent-bg)}
