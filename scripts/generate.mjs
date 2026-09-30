@@ -9,6 +9,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, copyFileSync } from "node:fs";
 import { execSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { openDb } from "../lib/db.mjs";
 import { displayName } from "../lib/names.mjs";
 
@@ -192,6 +193,11 @@ const SEARCH_JS = `(function(){
   document.querySelectorAll("details.more,details.mnav").forEach(function(d){document.addEventListener("click",function(e){if(!d.contains(e.target))d.removeAttribute("open");});});
 })();`;
 
+// Stylesheet URL carries a hash of its contents: browsers cache style.css for an hour, so any
+// style change must change the URL or visitors keep the old look.
+let cssVer = null;
+const cssVersion = () => (cssVer ??= createHash("sha256").update(CSS).digest("hex").slice(0, 10));
+
 function layout(title, body, { desc = "", canonical = "", jsonld = null, depth = 0, noindex = false, noReferrer = false } = {}) {
   const up = "../".repeat(depth) || "./";
   const active = navKey(canonical);
@@ -203,7 +209,7 @@ function layout(title, body, { desc = "", canonical = "", jsonld = null, depth =
 ${base && canonical ? `<link rel="canonical" href="${base}${canonical}">` : ""}
 <meta name="build" content="${esc(buildSha)} ${esc(buildStamp)}">
 <meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
-<link rel="stylesheet" href="${up}style.css?v=7">
+<link rel="stylesheet" href="${up}style.css?v=${cssVersion()}">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><text y=%2226%22 font-size=%2228%22>%E2%9C%93</text></svg>">
 ${jsonld ? `<script type="application/ld+json">${JSON.stringify(jsonld)}</script>` : ""}
 ${cfg.vercelAnalytics ? `<script defer src="/_vercel/insights/script.js"></script>` : ""}
