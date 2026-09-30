@@ -124,13 +124,13 @@ function licBadge(o) {
 const payerStatus = (siteKey, payer) => (payersBySite.get(siteKey) ?? []).find((p) => p.payer === payer);
 
 // ---------- layout ----------
-function layout(title, body, { desc = "", canonical = "", jsonld = null, depth = 0 } = {}) {
+function layout(title, body, { desc = "", canonical = "", jsonld = null, depth = 0, noindex = false, noReferrer = false } = {}) {
   const up = "../".repeat(depth) || "./";
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>
-<meta name="description" content="${esc(desc)}">
+<meta name="description" content="${esc(desc)}">${noindex ? `\n<meta name="robots" content="noindex">` : ""}${noReferrer ? `\n<meta name="referrer" content="no-referrer">` : ""}
 ${base && canonical ? `<link rel="canonical" href="${base}${canonical}">` : ""}
 <meta name="build" content="${esc(buildSha)} ${esc(buildStamp)}">
 <meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
@@ -182,13 +182,49 @@ function homePage() {
 
 <section class="card highlight">
   <h2>Find clinics near you</h2>
+  <label class="search">Search by clinic name or city
+    <input id="q" type="search" placeholder="e.g. Bright Path, or Round Rock" autocomplete="off" maxlength="80" aria-controls="qres">
+  </label>
+  <ul id="qres" class="qres" hidden></ul>
+  <p class="src or">or narrow by city and insurance:</p>
   <form class="finder" action="#" onsubmit="return cpGo(event)">
     <label>City<select id="cpCity">${cities.slice(0, 60).map((c) => `<option value="${c.city_slug}">${esc(c.city)} (${c.n})</option>`).join("")}</select></label>
     <label>Insurance<select id="cpPayer"><option value="">Any</option>${Object.entries(PAYERS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></label>
     <label class="chk"><input type="checkbox" id="cpOpen"> Only show clinics accepting now</label>
     <button>Search</button>
   </form>
-  <script>function cpGo(e){e.preventDefault();var c=document.getElementById('cpCity').value,p=document.getElementById('cpPayer').value,o=document.getElementById('cpOpen').checked;location.href='tx/'+c+'/'+(o?'accepting-now.html':(p?'accepts-'+p+'.html':'index.html'));return false}</script>
+  <script>
+(function(){
+  var q=document.getElementById("q"),out=document.getElementById("qres"),data=null,timer;
+  function norm(s){return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim();}
+  function load(){ if(data) return Promise.resolve(data);
+    return fetch("search.json").then(function(r){return r.json();}).then(function(d){data=d.map(function(x){return {npi:x[0],name:x[1],city:x[2],k:norm(x[1]+" "+x[2])};});return data;}); }
+  function render(list,term){
+    out.textContent="";
+    if(!term){out.hidden=true;return;}
+    if(!list.length){var li=document.createElement("li");li.className="none";li.textContent="No clinic matches “"+term+"”. Try part of the name, or a city.";out.appendChild(li);}
+    list.slice(0,8).forEach(function(x){
+      var li=document.createElement("li"),a=document.createElement("a"),b=document.createElement("b"),sp=document.createElement("span");
+      a.href="providers/"+encodeURIComponent(x.npi)+".html";b.textContent=x.name;sp.textContent=x.city+", TX";
+      a.appendChild(b);a.appendChild(sp);li.appendChild(a);out.appendChild(li);
+    });
+    out.hidden=false;
+  }
+  var pre=new URLSearchParams(location.search).get("q");
+  if(pre){q.value=pre.slice(0,80);setTimeout(function(){q.dispatchEvent(new Event("input"));},0);}
+  q.addEventListener("input",function(){
+    clearTimeout(timer);
+    timer=setTimeout(function(){
+      var term=q.value.slice(0,80).trim(),words=norm(term).split(" ").filter(Boolean);
+      if(!words.length){render([],"");return;}
+      load().then(function(d){
+        render(d.filter(function(x){return words.every(function(w){return x.k.indexOf(w)!==-1;});})
+          .sort(function(a,b){return (b.k.indexOf(words[0])===0)-(a.k.indexOf(words[0])===0)||a.name.localeCompare(b.name);}),term);
+      }).catch(function(){});
+    },120);
+  });
+})();
+function cpGo(e){e.preventDefault();var c=document.getElementById('cpCity').value,p=document.getElementById('cpPayer').value,o=document.getElementById('cpOpen').checked;location.href='tx/'+c+'/'+(o?'accepting-now.html':(p?'accepts-'+p+'.html':'index.html'));return false}</script>
   <p class="src" style="margin-top:.6rem">Or see <a href="openings.html"><b>every confirmed opening in Texas</b></a> on one page.</p>
 </section>
 
@@ -648,7 +684,7 @@ function respondPage() {
 </div>
 <script>
 (function(){
-  var t=new URLSearchParams(location.search).get("t")||"";
+  ${TOKEN_GRAB}
   var MSG={
     "accepting":["Marked as accepting new clients","Families searching your city will see that you have room within the hour.",1],
     "full":["Marked as full","We will show your waitlist as closed, so families do not call for a slot you cannot fill.",1],
@@ -669,7 +705,65 @@ function respondPage() {
     }).catch(fail);
 })();
 </script>`;
-  return layout(`Thanks — response recorded | ${cfg.siteName}`, body, { canonical: "/respond.html" });
+  return layout(`Thanks — response recorded | ${cfg.siteName}`, body, { canonical: "/respond.html", noindex: true, noReferrer: true });
+}
+
+// Pages opened from an emailed one-click link carry a signed token in ?t=. Read it once, then
+// strip it from the URL before the (deferred) analytics script runs, so it never reaches
+// analytics, history, or a Referer header. The page itself also sends no-referrer.
+const TOKEN_GRAB = `var t=new URLSearchParams(location.search).get("t")||"";if(t&&history.replaceState)history.replaceState(null,"",location.pathname);`;
+
+// Clinic insurance form, reached only from the "Update our insurance plans" email button.
+// The signed token (action "insurance", one clinic, 45-day expiry) is the only credential:
+// checked by /api/submit before the form shows and again on the Mac before anything is written.
+// Everything rendered from the network goes through textContent — never innerHTML.
+function insurancePage() {
+  const body = `
+<h1 id="hd">Update your insurance plans</h1>
+<p class="lede" id="msg">Checking your link…</p>
+<form class="card form" id="f" hidden>
+  <p><b id="clinic"></b></p>
+  <p class="src">Tick every plan you currently accept for new clients. Unticked plans will show as <b>not accepted</b>, dated today.</p>
+  <div class="plans">${Object.entries(PAYERS).map(([k, v]) => `<label class="chk"><input type="checkbox" name="accepted" value="${esc(k)}"> ${esc(v)}</label>`).join("")}</div>
+  <button type="submit" id="go">Save our plans</button>
+  <div class="src">Families see "Accepted — confirmed with the clinic" and the date. Always free; no login.</div>
+</form>
+<div class="card" id="oops" hidden>
+  <p><b>That link didn't work.</b> It may have expired or been copied incompletely.</p>
+  <p>Email <a href="mailto:${esc(cfg.correctionsEmail)}">${esc(cfg.correctionsEmail)}</a> with your clinic name and the plans you accept, and we'll update it for you.</p>
+</div>
+<script>
+(function(){
+  ${TOKEN_GRAB}
+  var $=function(id){return document.getElementById(id);};
+  function fail(){$("hd").textContent="That link didn't work";$("msg").textContent="";$("f").hidden=true;$("oops").hidden=false;}
+  function post(body){return fetch("/api/submit",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)}).then(function(r){return r.json();});}
+  if(!t){fail();return;}
+  post({kind:"insurance-check",t:t}).then(function(r){
+    if(!r||!r.ok||!/^\\d{10}$/.test(r.npi||"")){fail();return;}
+    $("msg").textContent="One step: tick the plans you take and save. Your listing updates within the hour.";
+    $("f").hidden=false;
+    fetch("/providers/"+r.npi+".html").then(function(x){return x.ok?x.text():"";}).then(function(h){
+      var n=h&&new DOMParser().parseFromString(h,"text/html").querySelector("h1");
+      $("clinic").textContent=n?n.textContent:"NPI "+r.npi;
+    }).catch(function(){});
+    fetch("/payers.json").then(function(x){return x.json();}).then(function(all){
+      var cur=all[r.npi]||{};
+      Array.prototype.forEach.call(document.querySelectorAll('input[name="accepted"]'),function(c){c.checked=cur[c.value]==="verified_yes";});
+    }).catch(function(){});
+  }).catch(fail);
+  $("f").addEventListener("submit",function(e){
+    e.preventDefault();$("go").disabled=true;$("go").textContent="Saving…";
+    var acc=Array.prototype.map.call(document.querySelectorAll('input[name="accepted"]:checked'),function(c){return c.value;});
+    post({kind:"insurance",t:t,accepted:acc}).then(function(r){
+      if(!r||!r.ok){fail();return;}
+      $("f").hidden=true;$("hd").textContent="Thank you — plans saved";
+      $("msg").textContent=acc.length?"Your listing will show these as confirmed within the hour.":"Your listing will show that you don't take any of the listed plans, within the hour.";
+    }).catch(function(){$("go").disabled=false;$("go").textContent="Save our plans";$("msg").textContent="Couldn't save just now — please try again in a minute.";});
+  });
+})();
+</script>`;
+  return layout(`Update your insurance plans | ${cfg.siteName}`, body, { canonical: "/insurance.html", noindex: true, noReferrer: true });
 }
 
 function unsubscribePage() {
@@ -800,6 +894,17 @@ footer .fine{font-size:.78rem;color:var(--faint)}
 .status.ok{color:var(--ok)}.status.warn{color:var(--warn)}.status.bad{color:var(--bad)}.status.mut{color:var(--mut)}
 .summary-actions{display:flex;gap:.5rem;flex-wrap:wrap}.summary-actions .btn{margin-top:0}
 .btn.ghost{border-color:var(--accent)}
+.search{display:block;font-size:.85rem;color:var(--soft);margin-bottom:.2rem}
+.search input{font-size:1.05rem;padding:.65rem .8rem}
+.qres{list-style:none;margin:.3rem 0 0;padding:0;border:1px solid var(--rule);border-radius:8px;overflow:hidden;background:var(--bg)}
+.qres li{margin:0;border-top:1px solid var(--rule)}.qres li:first-child{border-top:0}
+.qres a{display:flex;justify-content:space-between;gap:1rem;padding:.6rem .8rem;text-decoration:none;color:var(--ink)}
+.qres a:hover,.qres a:focus{background:var(--accent-bg)}.qres b{color:var(--accent-d);font-weight:600}.qres span{color:var(--faint);font-size:.85rem;white-space:nowrap}
+.qres li.none{padding:.6rem .8rem;color:var(--faint);font-size:.9rem}
+.or{margin:.8rem 0 .2rem}
+.plans{display:grid;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));gap:.2rem .8rem;margin:.6rem 0}
+.plans label.chk{display:flex;align-items:center;gap:.5rem;font-size:.95rem;color:var(--ink);margin:.35rem 0}
+.plans input{width:auto;margin:0}
 .letters{display:flex;flex-wrap:wrap;gap:.35rem .8rem;font-size:.92rem}.letters a{text-decoration:none;font-weight:600}
 @media(max-width:34rem){header.top .wrap{gap:.4rem}header nav{gap:.25rem .8rem;width:100%}header nav a.cta{margin-left:auto}}
 `;
@@ -822,6 +927,15 @@ w("openings.html", openingsPage()); count++;
 w("cities.html", citiesPage()); count++;
 w("verified.html", verifiedPage()); count++;
 w("respond.html", respondPage()); count++;
+w("insurance.html", insurancePage()); count++;
+w("search.json", JSON.stringify(orgs.map((o) => [o.npi, o.name, o.city])));
+// Confirmed plans only (the same facts the provider pages already show), for the insurance form.
+{
+  const confirmed = {};
+  for (const [site, rows] of payersBySite)
+    for (const r of rows) if (r.status !== "unverified") (confirmed[site] ??= {})[r.payer] = r.status;
+  w("payers.json", JSON.stringify(confirmed));
+}
 w("featured-thanks.html", layout(`You're featured | ${cfg.siteName}`, `
 <h1>Thank you — you're almost live</h1>
 <p class="lede">We're checking your director's license against the Texas roster now. Once it's confirmed your featured card goes live automatically, usually within the hour, and we'll email you. If it can't be verified, you're refunded in full.</p>
@@ -873,9 +987,20 @@ w("vercel.json", JSON.stringify({
     { source: "/(.*)", headers: [
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      // Clickjacking: nothing on this site may be framed, least of all the one-click pages.
+      { key: "X-Frame-Options", value: "DENY" },
+      { key: "Content-Security-Policy", value: "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" },
+      { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
+      { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
     ]},
+    { source: "/(respond|insurance).html", headers: [
+      { key: "Referrer-Policy", value: "no-referrer" },
+      { key: "Cache-Control", value: "no-store" },
+    ]},
+    { source: "/api/(.*)", headers: [{ key: "Cache-Control", value: "no-store" }] },
     { source: "/style.css", headers: [{ key: "Cache-Control", value: "public, max-age=3600" }] },
     { source: "/licenses.json", headers: [{ key: "Cache-Control", value: "public, max-age=86400" }] },
+    { source: "/search.json", headers: [{ key: "Cache-Control", value: "public, max-age=3600" }] },
   ],
 }, null, 2));
 

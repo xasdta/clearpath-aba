@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Update your insurance plans | ABA Openings</title>
+<meta name="description" content="">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<link rel="canonical" href="https://abaopenings.com/insurance.html">
+<meta name="build" content="573d4768 2026-09-30T03:03:57.817Z">
+<meta property="og:title" content="Update your insurance plans | ABA Openings"><meta property="og:description" content="">
+<link rel="stylesheet" href="./style.css?v=4">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><text y=%2226%22 font-size=%2228%22>%E2%9C%93</text></svg>">
+
+<script defer src="/_vercel/insights/script.js"></script>
+</head><body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="./index.html">ABA<span>Openings</span></a>
+  <nav><a href="./openings.html">Openings</a><a href="./texas-aba-access-report.html">Access report</a><a href="./lookup.html">License lookup</a><a href="./methodology.html">Methodology</a><a class="cta" href="./for-clinics.html">For clinics</a></nav>
+</div></header>
+<main class="wrap">
+<h1 id="hd">Update your insurance plans</h1>
+<p class="lede" id="msg">Checking your link…</p>
+<form class="card form" id="f" hidden>
+  <p><b id="clinic"></b></p>
+  <p class="src">Tick every plan you currently accept for new clients. Unticked plans will show as <b>not accepted</b>, dated today.</p>
+  <div class="plans"><label class="chk"><input type="checkbox" name="accepted" value="aetna"> Aetna</label><label class="chk"><input type="checkbox" name="accepted" value="bcbs-texas"> BCBS of Texas</label><label class="chk"><input type="checkbox" name="accepted" value="cigna"> Cigna</label><label class="chk"><input type="checkbox" name="accepted" value="unitedhealthcare"> UnitedHealthcare</label><label class="chk"><input type="checkbox" name="accepted" value="texas-medicaid"> Texas Medicaid (STAR/CHIP)</label><label class="chk"><input type="checkbox" name="accepted" value="tricare"> TRICARE</label></div>
+  <button type="submit" id="go">Save our plans</button>
+  <div class="src">Families see "Accepted — confirmed with the clinic" and the date. Always free; no login.</div>
+</form>
+<div class="card" id="oops" hidden>
+  <p><b>That link didn't work.</b> It may have expired or been copied incompletely.</p>
+  <p>Email <a href="mailto:sabrsystemssoftware@gmail.com">sabrsystemssoftware@gmail.com</a> with your clinic name and the plans you accept, and we'll update it for you.</p>
+</div>
+<script>
+(function(){
+  var t=new URLSearchParams(location.search).get("t")||"";if(t&&history.replaceState)history.replaceState(null,"",location.pathname);
+  var $=function(id){return document.getElementById(id);};
+  function fail(){$("hd").textContent="That link didn't work";$("msg").textContent="";$("f").hidden=true;$("oops").hidden=false;}
+  function post(body){return fetch("/api/submit",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)}).then(function(r){return r.json();});}
+  if(!t){fail();return;}
+  post({kind:"insurance-check",t:t}).then(function(r){
+    if(!r||!r.ok||!/^\d{10}$/.test(r.npi||"")){fail();return;}
+    $("msg").textContent="One step: tick the plans you take and save. Your listing updates within the hour.";
+    $("f").hidden=false;
+    fetch("/providers/"+r.npi+".html").then(function(x){return x.ok?x.text():"";}).then(function(h){
+      var n=h&&new DOMParser().parseFromString(h,"text/html").querySelector("h1");
+      $("clinic").textContent=n?n.textContent:"NPI "+r.npi;
+    }).catch(function(){});
+    fetch("/payers.json").then(function(x){return x.json();}).then(function(all){
+      var cur=all[r.npi]||{};
+      Array.prototype.forEach.call(document.querySelectorAll('input[name="accepted"]'),function(c){c.checked=cur[c.value]==="verified_yes";});
+    }).catch(function(){});
+  }).catch(fail);
+  $("f").addEventListener("submit",function(e){
+    e.preventDefault();$("go").disabled=true;$("go").textContent="Saving…";
+    var acc=Array.prototype.map.call(document.querySelectorAll('input[name="accepted"]:checked'),function(c){return c.value;});
+    post({kind:"insurance",t:t,accepted:acc}).then(function(r){
+      if(!r||!r.ok){fail();return;}
+      $("f").hidden=true;$("hd").textContent="Thank you — plans saved";
+      $("msg").textContent=acc.length?"Your listing will show these as confirmed within the hour.":"Your listing will show that you don't take any of the listed plans, within the hour.";
+    }).catch(function(){$("go").disabled=false;$("go").textContent="Save our plans";$("msg").textContent="Couldn't save just now — please try again in a minute.";});
+  });
+})();
+</script></main>
+<footer class="wrap">
+  <p><b>How we verify.</b> Provider records come from the federal NPI registry; license status is matched against the Texas TDLR roster published on data.texas.gov and stamped with the date we checked it. Insurance acceptance and waitlist status are marked verified only after we confirm them directly with the clinic — anything unconfirmed says so. We publish license verification only when we can positively match an active license; we never assert that a clinic's license is invalid.</p>
+  <p><b>How we make money.</b> Clinics may buy a flat monthly featured listing. Placement in the regular directory is never for sale, and we never take a fee per referral or per enrolled client.</p>
+  <p class="fine">ABA Openings is an independent directory. It is not medical advice and does not endorse any provider. Data last built 2026-09-30. Corrections: <a href="mailto:sabrsystemssoftware@gmail.com">sabrsystemssoftware@gmail.com</a></p>
+</footer>
+</body></html>

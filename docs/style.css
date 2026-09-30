@@ -98,5 +98,16 @@ footer .fine{font-size:.78rem;color:var(--faint)}
 .status.ok{color:var(--ok)}.status.warn{color:var(--warn)}.status.bad{color:var(--bad)}.status.mut{color:var(--mut)}
 .summary-actions{display:flex;gap:.5rem;flex-wrap:wrap}.summary-actions .btn{margin-top:0}
 .btn.ghost{border-color:var(--accent)}
+.search{display:block;font-size:.85rem;color:var(--soft);margin-bottom:.2rem}
+.search input{font-size:1.05rem;padding:.65rem .8rem}
+.qres{list-style:none;margin:.3rem 0 0;padding:0;border:1px solid var(--rule);border-radius:8px;overflow:hidden;background:var(--bg)}
+.qres li{margin:0;border-top:1px solid var(--rule)}.qres li:first-child{border-top:0}
+.qres a{display:flex;justify-content:space-between;gap:1rem;padding:.6rem .8rem;text-decoration:none;color:var(--ink)}
+.qres a:hover,.qres a:focus{background:var(--accent-bg)}.qres b{color:var(--accent-d);font-weight:600}.qres span{color:var(--faint);font-size:.85rem;white-space:nowrap}
+.qres li.none{padding:.6rem .8rem;color:var(--faint);font-size:.9rem}
+.or{margin:.8rem 0 .2rem}
+.plans{display:grid;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));gap:.2rem .8rem;margin:.6rem 0}
+.plans label.chk{display:flex;align-items:center;gap:.5rem;font-size:.95rem;color:var(--ink);margin:.35rem 0}
+.plans input{width:auto;margin:0}
 .letters{display:flex;flex-wrap:wrap;gap:.35rem .8rem;font-size:.92rem}.letters a{text-decoration:none;font-weight:600}
 @media(max-width:34rem){header.top .wrap{gap:.4rem}header nav{gap:.25rem .8rem;width:100%}header nav a.cta{margin-left:auto}}

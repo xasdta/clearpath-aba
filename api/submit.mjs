@@ -3,12 +3,15 @@
  *
  *   kind=inquiry | alert | unsubscribe | claim   plain form posts → 303 to a thanks page
  *   kind=respond (t=<signed token>)               fetch() from respond.html → JSON
+ *   kind=insurance-check (t)                      insurance.html asks whether its link is valid
+ *   kind=insurance (t, accepted=[plan keys])      insurance.html submits the clinic's plans → JSON
  *
  * Tokens are verified here so the clicker learns immediately whether the link worked; the
  * event is still re-verified when the Mac applies it. Needs env: INBOX_TOKEN, TOKEN_SECRET.
  */
 import { rawBody, parseBody, clean, queue } from "./_inbox.mjs";
 import { verifyToken } from "./_tokens.mjs";
+import { PAYER_KEYS } from "./_payers.mjs";
 
 export const config = { api: { bodyParser: false } };
 
@@ -38,6 +41,31 @@ export default async function handler(req, res) {
   try { f = parseBody(req, await rawBody(req)); }
   catch { return res.status(413).send("too large"); }
   const kind = String(f.kind || "");
+
+  // Insurance links are their own token action, so a leaked availability link can't be used
+  // to rewrite a clinic's plans and vice versa. The Mac re-verifies before writing anything.
+  if (kind === "insurance-check" || kind === "insurance") {
+    const t = String(f.t || "");
+    const v = verifyToken(t);
+    if (!v.ok || v.action !== "insurance") {
+      return res.status(400).json({ ok: false, reason: v.ok ? "wrong_link" : v.reason });
+    }
+    if (kind === "insurance-check") return res.status(200).json({ ok: true, npi: v.siteKey });
+    // Must be a JSON array of known keys. Anything else is refused rather than read as "no
+    // plans", which would mark every plan not-accepted.
+    const accepted = f.accepted;
+    if (!Array.isArray(accepted) || accepted.length > PAYER_KEYS.length
+        || !accepted.every((k) => typeof k === "string" && PAYER_KEYS.includes(k))) {
+      return res.status(400).json({ ok: false, reason: "bad_plans" });
+    }
+    try {
+      await queue("insurance", { t, accepted: [...new Set(accepted)] });
+    } catch (err) {
+      console.error("queue failed:", err.message);
+      return res.status(503).json({ ok: false, reason: "unavailable" });
+    }
+    return res.status(200).json({ ok: true });
+  }
 
   if (kind === "respond") {
     const v = verifyToken(String(f.t || ""));

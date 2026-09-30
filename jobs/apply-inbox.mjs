@@ -9,6 +9,7 @@
 //   respond claim-confirm    → claimant proved their email → owner gets [Approve] [Reject]
 //   respond claim-approve    → claim published, clinic added to the monthly availability loop
 //   claim                    → licence + NPI checked, claimant asked to confirm their email
+//   insurance                → clinic's ticked plans recorded as confirmed (the rest as not accepted)
 //   inquiry                  → forwarded to the clinic (or to the owner if we hold no address)
 //   alert / unsubscribe      → subscriber added / suppressed
 //   stripe checkout          → NPI, verified licence and city cap checked → published or refunded
@@ -28,6 +29,7 @@ import { randomBytes } from "node:crypto";
 import { openDb, today, nowIso } from "../lib/db.mjs";
 import { sendMail, suppress } from "../lib/mail.mjs";
 import { mintToken, verifyToken } from "../lib/tokens.mjs";
+import { PAYER_KEYS } from "../api/_payers.mjs";
 
 const root = new URL("../", import.meta.url);
 const cfg = JSON.parse(readFileSync(new URL("site.config.json", root)));
@@ -40,7 +42,7 @@ const CLAIMS = new URL("data/claims.json", root);
 
 const db = openDb();
 const link = (key, action, ttlDays = 45) =>
-  `${SITE}/respond.html?t=${encodeURIComponent(mintToken({ siteKey: String(key), action, ttlDays }))}`;
+  `${SITE}/${action === "insurance" ? "insurance" : "respond"}.html?t=${encodeURIComponent(mintToken({ siteKey: String(key), action, ttlDays }))}`;
 const readJson = (u) => JSON.parse(readFileSync(u, "utf8"));
 const writeJson = (u, v) => writeFileSync(u, JSON.stringify(v, null, 2) + "\n");
 const isEmail = (s) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(s || ""));
@@ -143,6 +145,10 @@ The single most useful thing you can do now: tell families whether you can take 
   Yes, we're accepting:  ${link(o.npi, "accepting")}
   No, we're full:        ${link(o.npi, "full")}
 
+And which insurance plans you take (families filter by plan too):
+
+  Update your plans:     ${link(o.npi, "insurance")}
+
 One click, no login. We'll ask again about once a month so your status never goes stale.
 
 — ${cfg.siteName}
@@ -168,6 +174,27 @@ another look.
     return { outcome: `claim ${claim.id} rejected` };
   }
   return { outcome: `unknown action ${v.action}` };
+};
+
+// The clinic ticked the plans it takes. Ticked → accepted, unticked → not accepted, both dated
+// and marked as confirmed by the clinic. Re-verified here: the Vercel check is not trusted alone.
+H.insurance = async ({ t, accepted }) => {
+  const v = verifyToken(t);
+  if (!v.ok) return { outcome: `rejected:${v.reason}` };
+  if (v.action !== "insurance") return { outcome: "rejected:wrong_link" };
+  const plans = Array.isArray(accepted) ? accepted : [];
+  if (!plans.every((k) => PAYER_KEYS.includes(k))) return { outcome: "rejected:bad_plans" };
+  const o = org(v.siteKey);
+  if (!o) return { outcome: "unknown_clinic" };
+  const upsert = db.prepare(`
+    INSERT INTO ops.payer_acceptance (site_key, payer, status, verified_at, verify_method) VALUES (?,?,?,?, 'clinic')
+    ON CONFLICT(site_key, payer) DO UPDATE SET status=excluded.status, verified_at=excluded.verified_at, verify_method='clinic'`);
+  db.exec("BEGIN");
+  try {
+    for (const k of PAYER_KEYS) upsert.run(o.npi, k, plans.includes(k) ? "verified_yes" : "verified_no", today());
+    db.exec("COMMIT");
+  } catch (e) { db.exec("ROLLBACK"); throw e; }
+  return { outcome: `${o.name}: accepts ${plans.join(", ") || "none of the listed plans"}`, publish: true };
 };
 
 H.claim = async (d) => {
@@ -414,6 +441,7 @@ Keep it working for you by telling families when you have room:
 
   Yes, we're accepting:  ${link(o.npi, "accepting")}
   No, we're full:        ${link(o.npi, "full")}
+  Your insurance plans:  ${link(o.npi, "insurance")}
 
 Cancel anytime from the receipt Stripe emailed you; the founding rate stays yours while you're subscribed.
 

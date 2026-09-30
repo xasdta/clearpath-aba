@@ -56,6 +56,7 @@ async function askClinics() {
     const { subject, text, html } = askClinicEmail({
       name: r.name, siteKey: r.site_key, site: SITE, contact: cfg.correctionsEmail,
       yesUrl: respondUrl(r.site_key, "accepting"), fullUrl: respondUrl(r.site_key, "full"),
+      insuranceUrl: `${SITE}/insurance.html?t=${encodeURIComponent(mintToken({ siteKey: r.site_key, action: "insurance" }))}`,
     });
     const res = await sendMail(db, { to: r.email, subject, text, html, dedupeKey, tag: "ask-clinic" });
     if (res.sent || res.logged) sent++; else skipped++;
