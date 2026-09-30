@@ -414,7 +414,7 @@ function cityPage(c, payer = null, openOnly = false) {
         : `No ${esc(c.city)} clinic has confirmed openings with us in the last 90 days. That is an honest gap in our data, not proof that everyone is full — we are working down the call list. Set an alert below and we will email you the moment one opens.`)
     : `${ranked.length} provider${ranked.length === 1 ? "" : "s"} compiled from public records${openCount ? `, ${openCount} with confirmed openings right now` : ""}. ${payer ? `Insurance acceptance is confirmed by phone before we show it as accepted — insurer directories are wrong often enough that regulators call them ghost networks.` : `Sorted so clinics that can actually take your child come first.`}`}</p>
 
-${openOnly ? "" : `<div class="chips"><a class="chip open" href="accepting-now.html">✓ Accepting new clients${openCount ? ` (${openCount})` : ""}</a>${payer ? "" : Object.entries(PAYERS).map(([k, v]) => `<a class="chip" href="accepts-${k}.html">Accepts ${esc(v)}</a>`).join("")}</div>`}
+${openOnly ? "" : `<div class="chips"><a class="chip open" href="accepting-now.html">✓ Accepting new clients${openCount ? ` (${openCount})` : ""}</a>${payer || c.n < MIN_SITES_FOR_PAYER_PAGE ? "" : Object.entries(PAYERS).map(([k, v]) => `<a class="chip" href="accepts-${k}.html">Accepts ${esc(v)}</a>`).join("")}</div>`}
 
 ${feats.length ? `<h2 class="fh">Featured providers <span class="src">· paid placement, always labeled</span></h2>
 <div class="grid feats">${feats.map((f) => featuredCard(f, "../../")).join("")}</div>` : ""}
