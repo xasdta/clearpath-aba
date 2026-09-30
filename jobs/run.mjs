@@ -10,6 +10,7 @@
 import { openDb, today, nowIso, addDays } from "../lib/db.mjs";
 import { sendMail, mailConfig } from "../lib/mail.mjs";
 import { mintToken } from "../lib/tokens.mjs";
+import { askClinicEmail } from "../lib/clinic-emails.mjs";
 import { readFileSync } from "node:fs";
 
 const cfg = JSON.parse(readFileSync(new URL("../site.config.json", import.meta.url)));
@@ -52,29 +53,11 @@ async function askClinics() {
   for (const r of due) {
     // Dedupe per clinic per month: a re-run today must not send a second ask.
     const dedupeKey = `ask:${r.site_key}:${today().slice(0, 7)}`;
-    const text = `Hi ${r.name},
-
-You're listed on ABA Openings, a free directory Texas families use to find ABA providers who
-can actually take a new client. Families filter for exactly one thing: who has room.
-
-Can you take new clients right now?
-
-  Yes, we're accepting:  ${respondUrl(r.site_key, "accepting")}
-  No, we're full:        ${respondUrl(r.site_key, "full")}
-
-One click, no login, and your listing updates immediately. If we don't hear back we mark your
-status as unconfirmed rather than guessing — an out-of-date "yes" wastes a family's phone call
-and your intake team's time.
-
-Your listing: ${SITE}/providers/${r.site_key}.html
-
-— ABA Openings
-${cfg.correctionsEmail} · Reply "stop" and we won't email again.`;
-
-    const res = await sendMail(db, {
-      to: r.email, subject: `${r.name}: are you accepting new clients?`,
-      text, dedupeKey, tag: "ask-clinic",
+    const { subject, text, html } = askClinicEmail({
+      name: r.name, siteKey: r.site_key, site: SITE, contact: cfg.correctionsEmail,
+      yesUrl: respondUrl(r.site_key, "accepting"), fullUrl: respondUrl(r.site_key, "full"),
     });
+    const res = await sendMail(db, { to: r.email, subject, text, html, dedupeKey, tag: "ask-clinic" });
     if (res.sent || res.logged) sent++; else skipped++;
   }
   return `asked ${sent}, skipped ${skipped}, eligible ${due.length}`;
