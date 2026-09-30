@@ -87,6 +87,8 @@ export default async function handler(req, res) {
   const data = clean(f, FIELDS[kind]);
   if (REQUIRED[kind].some((k) => !data[k])) return seeOther("/thanks.html?missing=1");
   if (data.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email)) return seeOther("/thanks.html?missing=1");
+  // Alerts match on ZIP + radius, so a bad ZIP would subscribe the family to nothing.
+  if (kind === "alert" && !/^\d{5}$/.test(data.zip)) return seeOther("/thanks.html?missing=1");
 
   try {
     await queue(kind, data);

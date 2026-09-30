@@ -444,14 +444,14 @@ ${alertSignup(c.city, c.city_slug, 2)}
 function alertSignup(cityLabel, citySlug, depth) {
   return `<div class="card highlight" id="alerts">
 <h2>Get told when a clinic opens up${cityLabel ? ` in ${esc(cityLabel)}` : ""}</h2>
-<p>Waitlists move without warning. Tell us what you need and we will email you when a clinic near you confirms an opening — no more calling ten clinics a month to ask.</p>
+<p>Waitlists move without warning. Tell us what you need and we will email you when a clinic within your travel distance confirms an opening — no more calling ten clinics a month to ask. We skip clinics that have told us they don't take your insurance.</p>
 ${formOpen("alert")}
   <input type="hidden" name="alert_city" value="${esc(citySlug ?? "")}">
   <div class="f2"><label>Email<input name="email" type="email" required></label>
-  <label>ZIP code<input name="zip" required></label></div>
-  <div class="f2"><label>Insurance<select name="insurance">${Object.values(PAYERS).map((v) => `<option>${esc(v)}</option>`).join("")}<option>Other / self-pay</option></select></label>
-  <label>Child's age<select name="child_age"><option>0-3</option><option>4-6</option><option>7-12</option><option>13+</option></select></label></div>
-  <label>How far will you travel?<select name="radius"><option>10 miles</option><option selected>25 miles</option><option>50 miles</option></select></label>
+  <label>ZIP code<input name="zip" required inputmode="numeric" pattern="[0-9]{5}" maxlength="5" title="5-digit ZIP code"></label></div>
+  <div class="f2"><label>Insurance<select name="insurance"><option value="" selected>Any / not sure</option>${Object.entries(PAYERS).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("")}<option value="other">Other / self-pay</option></select></label>
+  <label>Child's age<select name="child_age"><option value="" selected>Prefer not to say</option><option>0-3</option><option>4-6</option><option>7-12</option><option>13+</option></select></label></div>
+  <label>How far will you travel?<select name="radius"><option value="10">10 miles</option><option value="25" selected>25 miles</option><option value="50">50 miles</option></select></label>
   <button>Email me when a spot opens</button>
   <div class="src">One email per matching opening, at most one a week. Unsubscribe in a click. We never sell your information, and we never share it with clinics unless you contact them yourself.</div>
 </form></div>`;

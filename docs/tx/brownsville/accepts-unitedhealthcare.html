@@ -4,7 +4,7 @@
 <title>ABA therapy in Brownsville, TX that accepts UnitedHealthcare | ABA Openings</title>
 <meta name="description" content="5 ABA therapy providers in Brownsville, TX accepting UnitedHealthcare — license-verified, with confirmed insurance and openings status.">
 <link rel="canonical" href="https://abaopenings.com/tx/brownsville/accepts-unitedhealthcare.html">
-<meta name="build" content="5586d4d5 2026-09-30T03:24:10.222Z">
+<meta name="build" content="b5704327 2026-09-30T03:32:35.471Z">
 <meta property="og:title" content="ABA therapy in Brownsville, TX that accepts UnitedHealthcare | ABA Openings"><meta property="og:description" content="5 ABA therapy providers in Brownsville, TX accepting UnitedHealthcare — license-verified, with confirmed insurance and openings status.">
 <link rel="stylesheet" href="../../style.css?v=6">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><text y=%2226%22 font-size=%2228%22>%E2%9C%93</text></svg>">
@@ -50,16 +50,16 @@
 
 <div class="card highlight" id="alerts">
 <h2>Get told when a clinic opens up in Brownsville</h2>
-<p>Waitlists move without warning. Tell us what you need and we will email you when a clinic near you confirms an opening — no more calling ten clinics a month to ask.</p>
+<p>Waitlists move without warning. Tell us what you need and we will email you when a clinic within your travel distance confirms an opening — no more calling ten clinics a month to ask. We skip clinics that have told us they don't take your insurance.</p>
 <form class="card form" action="/api/submit" method="POST">
        <input type="hidden" name="kind" value="alert">
        <input type="checkbox" name="botcheck" class="hidden" style="display:none" tabindex="-1" autocomplete="off">
   <input type="hidden" name="alert_city" value="brownsville">
   <div class="f2"><label>Email<input name="email" type="email" required></label>
-  <label>ZIP code<input name="zip" required></label></div>
-  <div class="f2"><label>Insurance<select name="insurance"><option>Aetna</option><option>BCBS of Texas</option><option>Cigna</option><option>UnitedHealthcare</option><option>Texas Medicaid (STAR/CHIP)</option><option>TRICARE</option><option>Other / self-pay</option></select></label>
-  <label>Child's age<select name="child_age"><option>0-3</option><option>4-6</option><option>7-12</option><option>13+</option></select></label></div>
-  <label>How far will you travel?<select name="radius"><option>10 miles</option><option selected>25 miles</option><option>50 miles</option></select></label>
+  <label>ZIP code<input name="zip" required inputmode="numeric" pattern="[0-9]{5}" maxlength="5" title="5-digit ZIP code"></label></div>
+  <div class="f2"><label>Insurance<select name="insurance"><option value="" selected>Any / not sure</option><option value="aetna">Aetna</option><option value="bcbs-texas">BCBS of Texas</option><option value="cigna">Cigna</option><option value="unitedhealthcare">UnitedHealthcare</option><option value="texas-medicaid">Texas Medicaid (STAR/CHIP)</option><option value="tricare">TRICARE</option><option value="other">Other / self-pay</option></select></label>
+  <label>Child's age<select name="child_age"><option value="" selected>Prefer not to say</option><option>0-3</option><option>4-6</option><option>7-12</option><option>13+</option></select></label></div>
+  <label>How far will you travel?<select name="radius"><option value="10">10 miles</option><option value="25" selected>25 miles</option><option value="50">50 miles</option></select></label>
   <button>Email me when a spot opens</button>
   <div class="src">One email per matching opening, at most one a week. Unsubscribe in a click. We never sell your information, and we never share it with clinics unless you contact them yourself.</div>
 </form></div>

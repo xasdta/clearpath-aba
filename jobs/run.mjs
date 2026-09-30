@@ -23,6 +23,16 @@ const ALERT_CAP_PER_SITE = 5;   // families told about one opening — see thund
 const ALERT_COOLDOWN_DAYS = 7;  // max one alert per family per week
 
 const db = openDb();
+
+// Distance matching for family alerts: US Census ZCTA internal points for Texas ZIPs.
+const ZIPS = JSON.parse(readFileSync(new URL("../data/tx-zips.json", import.meta.url))).zips;
+const zipLL = (z) => ZIPS[String(z || "").trim().slice(0, 5)];
+function miles(a, b) {                                // haversine, statute miles
+  const R = 3958.8, rad = Math.PI / 180;
+  const dLa = (b[0] - a[0]) * rad, dLo = (b[1] - a[1]) * rad;
+  const h = Math.sin(dLa / 2) ** 2 + Math.cos(a[0] * rad) * Math.cos(b[0] * rad) * Math.sin(dLo / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
 const arg = process.argv[2] || "all";
 
 // ---------- helpers ----------
@@ -77,7 +87,7 @@ async function askClinics() {
 // given clinic only once ever and at most one alert per ALERT_COOLDOWN_DAYS.
 async function familyAlerts() {
   const openings = db.prepare(`
-    SELECT a.site_key, s.city_slug, s.city, o.name
+    SELECT a.site_key, s.city_slug, s.city, s.zip, s.phone, o.name
     FROM ops.availability a
     JOIN sites s ON s.site_key = a.site_key AND s.active = 1
     JOIN organizations o ON o.npi = s.org_npi AND o.active = 1
@@ -87,21 +97,35 @@ async function familyAlerts() {
 
   let notified = 0;
   for (const op of openings) {
+    // "Near you" means within the family's own travel radius of their ZIP. Where either ZIP has
+    // no location (the registry holds some out-of-state mailing ZIPs) we fall back to the city
+    // they signed up from — never to "anywhere in Texas". A plan the clinic has confirmed it does
+    // NOT take rules it out; an unconfirmed plan doesn't (most are unconfirmed, and the family
+    // can ask when they call).
+    const siteLL = zipLL(op.zip);
+    const refused = new Set(db.prepare(`SELECT payer FROM ops.payer_acceptance WHERE site_key = ? AND status = 'verified_no'`)
+      .all(op.site_key).map((r) => r.payer));
     const subs = db.prepare(`
       SELECT * FROM ops.alert_subscribers
       WHERE unsubscribed_at IS NULL
-        AND (city_slug = ? OR city_slug IS NULL OR city_slug = '')
         AND (last_sent_at IS NULL OR last_sent_at <= datetime('now', '-${ALERT_COOLDOWN_DAYS} days'))
         AND NOT EXISTS (SELECT 1 FROM ops.alert_sends x WHERE x.subscriber_id = alert_subscribers.id AND x.site_key = ?)
         AND NOT EXISTS (SELECT 1 FROM ops.suppressions p WHERE p.email = alert_subscribers.email)
-      ORDER BY created_at ASC
-      LIMIT ${ALERT_CAP_PER_SITE}`).all(op.city_slug, op.site_key);
+      ORDER BY created_at ASC`).all(op.site_key)
+      .map((sub) => {
+        const subLL = zipLL(sub.zip);
+        const dist = siteLL && subLL ? miles(subLL, siteLL) : null;
+        const near = dist != null ? dist <= (sub.radius_miles || 25) : !!sub.city_slug && sub.city_slug === op.city_slug;
+        return { ...sub, dist, near };
+      })
+      .filter((sub) => sub.near && !(sub.payer && refused.has(sub.payer)))
+      .slice(0, ALERT_CAP_PER_SITE);                  // longest-waiting first (ORDER BY above)
 
     for (const sub of subs) {
       const text = `Good news — a clinic near you just confirmed it can take new clients.
 
 ${op.name}
-${op.city}, TX
+${op.city}, TX${sub.dist != null ? ` · ${sub.dist < 1.5 ? "about a mile" : `about ${Math.round(sub.dist)} miles`} from ${sub.zip}` : ""}${op.phone ? `\n${op.phone}` : ""}
 ${SITE}/providers/${op.site_key}.html
 
 Call soon; openings move fast, and we only tell a handful of families about each one so you

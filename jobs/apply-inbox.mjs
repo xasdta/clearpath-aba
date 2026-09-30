@@ -323,6 +323,11 @@ We never sell family contact information and never share it with any other clini
 
 H.alert = async (d) => {
   const email = d.email.toLowerCase();
+  // Matching uses the ZIP + radius, so both must be sane; the plan must be one we know.
+  const zip = String(d.zip ?? "").trim().slice(0, 5);
+  if (!/^\d{5}$/.test(zip)) return { outcome: `rejected: bad ZIP ${JSON.stringify(d.zip ?? "")}` };
+  const payer = PAYER_KEYS.includes(d.insurance) ? d.insurance : null;
+  const radius = [10, 25, 50].includes(parseInt(d.radius, 10)) ? parseInt(d.radius, 10) : 25;
   const city = d.alert_city || null;
   const existing = db.prepare(`SELECT id FROM ops.alert_subscribers WHERE email=? AND coalesce(city_slug,'')=coalesce(?,'') AND unsubscribed_at IS NULL`).get(email, city);
   if (existing) return { outcome: "already subscribed" };
@@ -330,12 +335,11 @@ H.alert = async (d) => {
   db.prepare(`DELETE FROM ops.suppressions WHERE email=? AND reason='unsubscribed'`).run(email);
   db.prepare(`INSERT INTO ops.alert_subscribers (email, zip, city_slug, payer, child_age, radius_miles, confirmed_at, created_at, token)
               VALUES (?,?,?,?,?,?,?,?,?)`)
-    .run(email, d.zip ?? null, city, d.insurance ?? null, d.child_age ?? null,
-      parseInt(d.radius, 10) || 25, nowIso(), nowIso(), randomBytes(12).toString("hex"));
+    .run(email, zip, city, payer, d.child_age ?? null, radius, nowIso(), nowIso(), randomBytes(12).toString("hex"));
   await mail({
     to: email, tag: "alert-welcome", dedupeKey: `alert-welcome:${email}:${city ?? "all"}`,
     subject: `You're on the list for ABA openings${city ? "" : " in Texas"}`,
-    text: `We'll email you when a clinic near ${d.zip ?? "you"} confirms it can take a new client — at most one email a week, and only for openings we've confirmed directly with the clinic.
+    text: `We'll email you when a clinic within ${radius} miles of ${zip} confirms it can take a new client — at most one email a week, and only for openings we've confirmed directly with the clinic.${payer ? " We'll skip clinics that have told us they don't take your insurance." : ""}
 
 See what's open right now: ${SITE}/openings.html
 
