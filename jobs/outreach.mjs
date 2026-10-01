@@ -18,8 +18,10 @@
 
 import "../lib/env.mjs";
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { openDb, today, nowIso } from "../lib/db.mjs";
-import { sendMail, isSuppressed, suppress } from "../lib/mail.mjs";
+import { sendMail, isSuppressed, suppress, alreadySent } from "../lib/mail.mjs";
+import { smtpSend, parseSmtpUrl } from "../lib/smtp.mjs";
 import { clinicOutreach } from "../lib/outreach-email.mjs";
 
 const cfg = JSON.parse(readFileSync(new URL("../site.config.json", import.meta.url)));
@@ -30,6 +32,29 @@ const db = openDb();
 const [cmd = "status", arg] = process.argv.slice(2);
 
 if (!cfg.postalAddress) throw new Error("site.config.json postalAddress is required (CAN-SPAM)");
+
+// First-contact mail goes through the Google Workspace mailbox (listings@sabrsoftware.com) —
+// never Resend, whose acceptable-use policy forbids cold email. Same safety gates as sendMail:
+// suppression list, per-message dedupe key, and a row in ops.mail_log for the dashboard.
+const box = process.env.OUTREACH_SMTP ? parseSmtpUrl(process.env.OUTREACH_SMTP) : null;
+async function sendOutreach({ to, subject, text, html, dedupeKey, tag }) {
+  const addr = String(to || "").trim().toLowerCase();
+  if (!box && !process.env.OUTREACH_DRY) return { sent: false, reason: "no_mailbox" };
+  if (isSuppressed(db, addr)) return { sent: false, reason: "suppressed" };
+  if (alreadySent(db, dedupeKey)) return { sent: false, reason: "duplicate" };
+  if (process.env.OUTREACH_DRY) { console.log(`  [dry] ${tag} -> ${addr}: ${subject}`); return { sent: false, logged: true, reason: "dry" }; }
+  const record = (status, detail = null) => db.prepare(`INSERT OR IGNORE INTO ops.mail_log (dedupe_key, email, subject, tag, status, detail, created_at) VALUES (?,?,?,?,?,?,?)`)
+    .run(dedupeKey, addr, subject, tag, status, detail, nowIso());
+  try {
+    const r = await smtpSend(box, { from: cfg.outreachFrom, fromName: cfg.outreachFromName, to: addr, subject, text, html,
+      replyTo: cfg.outreachFrom, listUnsubscribe: `<mailto:${cfg.outreachFrom}?subject=unsubscribe>, <https://${cfg.domain}/unsubscribe.html>` });
+    record("sent", `smtp ${r.messageId}`);
+    return { sent: true };
+  } catch (e) {
+    record("failed", String(e.message).slice(0, 300));
+    return { sent: false, reason: "smtp_error", status: e.message.slice(0, 60) };
+  }
+}
 const sender = { name: cfg.senderName, title: cfg.senderTitle };
 const org = (npi) => db.prepare(`SELECT o.*, s.city FROM organizations o JOIN sites s ON s.site_key = o.npi WHERE o.npi = ? AND o.active = 1`).get(npi);
 
@@ -71,6 +96,9 @@ function dailyCap() {
 async function send() {
   const dow = new Date().toLocaleString("en-US", { timeZone: "America/Chicago", weekday: "short" });
   if (["Sat", "Sun"].includes(dow) && !process.env.OUTREACH_ANY_DAY) return "weekend — nothing sent";
+  if (!box && !process.env.OUTREACH_DRY) return "paused — OUTREACH_SMTP is not set in .env (outreach must not go through Resend)";
+  // Bounces and "unsubscribe" replies land in the Workspace inbox; stop those people first.
+  if (!process.env.OUTREACH_DRY) { try { console.log(execFileSync("/usr/bin/python3", ["/Users/xasdta/Projects/directory-ventures/campaign-dashboard/mailbox_check.py"], { encoding: "utf8" }).trim()); } catch {} }
   const moved = reconcile();
   const sentToday = db.prepare(`SELECT COUNT(*) c FROM ops.mail_log WHERE tag LIKE 'outreach-_' AND status IN ('sent','dryrun') AND created_at >= date('now')`).get().c;
   const cap = Math.max(0, dailyCap() - sentToday);
@@ -89,7 +117,7 @@ async function send() {
     if (!o) { db.prepare(`UPDATE ops.outreach SET status='done', stopped_reason='listing retired' WHERE npi=?`).run(r.npi); out.skipped++; continue; }
     const step = r.step + 1;
     const e = clinicOutreach({ org: o, sender, postalAddress: cfg.postalAddress, step });
-    const res = await sendMail(db, { to: r.email, subject: e.subject, text: e.text, html: e.html, dedupeKey: `outreach:${r.npi}:${step}`, tag: `outreach-${step}` });
+    const res = await sendOutreach({ to: r.email, subject: e.subject, text: e.text, html: e.html, dedupeKey: `outreach:${r.npi}:${step}`, tag: `outreach-${step}` });
     if (res.sent || res.logged) {
       db.prepare(`UPDATE ops.outreach SET step=?, status=?, last_sent_at=? WHERE npi=?`).run(step, step >= 2 ? "done" : "active", nowIso(), r.npi);
       out.sent++;
