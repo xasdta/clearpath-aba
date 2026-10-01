@@ -1,13 +1,13 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Thanks — response recorded | ABA Openings</title>
+<title>Confirm your answer | ABA Openings</title>
 <meta name="description" content="">
 <meta name="robots" content="noindex">
 <meta name="referrer" content="no-referrer">
 <link rel="canonical" href="https://abaopenings.com/respond.html">
-<meta name="build" content="28ce83675 2026-09-30T16:48:08.414Z">
-<meta property="og:title" content="Thanks — response recorded | ABA Openings"><meta property="og:description" content="">
+<meta name="build" content="4fa4c941d 2026-10-01T04:37:01.019Z">
+<meta property="og:title" content="Confirm your answer | ABA Openings"><meta property="og:description" content="">
 <link rel="stylesheet" href="./style.css?v=166188f619">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><text y=%2226%22 font-size=%2228%22>%E2%9C%93</text></svg>">
 
@@ -37,9 +37,11 @@
     </div>
   </details>
 </div></header>
-<main class="wrap" id="main"><section class="page-head"><h1 id="hd">Recording your answer…</h1>
+<main class="wrap" id="main"><section class="page-head"><h1 id="hd">Confirm your answer</h1>
 <p class="lede" id="msg">One moment.</p>
-</section><div class="card" id="detail" hidden>
+</section><div id="ask" hidden><p><button class="btn" id="go" type="button">Confirm</button></p>
+  <p class="src">Nothing is recorded until you press the button.</p></div>
+<div class="card" id="detail" hidden>
   <p><b>Thank you</b> — your listing will show this within the hour, stamped with today's date.</p>
   <p class="src">We ask again in about a month. Families filter for clinics that can actually take a new client, so an up-to-date answer means fewer wasted calls for your intake team — and no calls at all when you're full.</p>
   <p><a class="btn" href="index.html">See the directory</a></p>
@@ -51,24 +53,37 @@
 <script>
 (function(){
   var t=new URLSearchParams(location.search).get("t")||"";if(t&&history.replaceState)history.replaceState(null,"",location.pathname);
-  var MSG={
+  var ASK={
+    "accepting":["Yes, we're accepting new clients","Your listing will show families that you have room."],
+    "full":["We're full right now","Your listing will show families that your waitlist is closed."],
+    "claim-confirm":["Confirm this is my email address","This continues the claim on your listing."],
+    "claim-approve":["Approve this claim","The clinic will be marked as claimed and emailed."],
+    "claim-reject":["Reject this claim","The claimant will be told politely; nothing on the listing changes."]
+  };
+  var DONE={
     "accepting":["Marked as accepting new clients","Families searching your city will see that you have room within the hour.",1],
     "full":["Marked as full","We will show your waitlist as closed, so families do not call for a slot you cannot fill.",1],
     "claim-confirm":["Email confirmed","Thanks. We do a final review of every claim, usually the same day, and will email you when your listing is yours.",0],
     "claim-approve":["Claim approved","Publishing now; the clinic has been emailed.",0],
     "claim-reject":["Claim rejected","The claimant has been told politely. Nothing on the listing changed.",0]
   };
+  var hd=document.getElementById("hd"),msg=document.getElementById("msg");
   function show(id){document.getElementById(id).hidden=false;}
-  function fail(){document.getElementById("hd").textContent="That link didn't work";document.getElementById("msg").textContent="";show("oops");}
-  if(!t){fail();return;}
-  fetch("/api/submit",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"respond",t:t})})
-    .then(function(r){return r.json();})
-    .then(function(r){
-      var m=r&&r.ok&&MSG[r.action]; if(!m){fail();return;}
-      document.getElementById("hd").textContent=m[0];
-      document.getElementById("msg").textContent=m[1];
-      if(m[2]) show("detail");
-    }).catch(fail);
+  function fail(){hd.textContent="That link didn't work";msg.textContent="";document.getElementById("ask").hidden=true;show("oops");}
+  var a="";try{a=JSON.parse(atob(t.split(".")[0].replace(/-/g,"+").replace(/_/g,"/"))).a||"";}catch(e){}
+  var q=ASK[a]; if(!t||!q){fail();return;}
+  hd.textContent=q[0]+"?"; msg.textContent=q[1]; show("ask");
+  var go=document.getElementById("go"); go.textContent="Confirm: "+q[0];
+  go.addEventListener("click",function(){
+    go.disabled=true; go.textContent="Saving…";
+    fetch("/api/submit",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"respond",t:t})})
+      .then(function(r){return r.json();})
+      .then(function(r){
+        var m=r&&r.ok&&DONE[r.action]; if(!m){fail();return;}
+        document.getElementById("ask").hidden=true; hd.textContent=m[0]; msg.textContent=m[1];
+        if(m[2]) show("detail");
+      }).catch(fail);
+  });
 })();
 </script></main>
 <footer class="site">
@@ -81,7 +96,7 @@
   </div>
   <div class="wrap fine">
     <p><b>How we make money.</b> Clinics may buy a flat monthly featured listing, always labeled. Placement in the regular directory is never for sale, and we never take a fee per referral or per enrolled client.</p>
-    <p>ABA Openings is an independent directory built from the federal NPI registry and the Texas TDLR roster. It is not medical advice and does not endorse any provider. Data last built 2026-09-30. <a href="#main">Back to top ↑</a></p>
+    <p>ABA Openings is an independent directory built from the federal NPI registry and the Texas TDLR roster. It is not medical advice and does not endorse any provider. Data last built 2026-10-01. <a href="#main">Back to top ↑</a></p>
   </div>
 </footer>
 <script>(function(){

@@ -858,14 +858,19 @@ ${alertSignup(null, null, 0)}
 }
 
 
-// One-click response landing page for clinic emails. The token carries the clinic and the
-// answer; this page confirms it to the clinic and files the response. It deliberately does no
-// verification client-side — the signature is checked when the response is applied, so a
-// forged link cannot change anything, it just produces a response we reject.
+// Response page for the buttons in clinic emails. Opening the link changes nothing: the page
+// shows the answer the button stands for and records it only when a person presses Confirm.
+// Corporate mail scanners (Microsoft Defender Safe Links, Mimecast, Proofpoint…) open — and
+// often run the scripts on — every link in an email before the recipient sees it; when this page
+// posted on load, a scanner "answered" both Accepting and Full for one clinic within 3 seconds
+// (2026-09-30). The token's answer is read here only for display; the signature is checked
+// when the response is applied, so a forged link still changes nothing.
 function respondPage() {
   const body = `
-<h1 id="hd">Recording your answer…</h1>
+<h1 id="hd">Confirm your answer</h1>
 <p class="lede" id="msg">One moment.</p>
+<div id="ask" hidden><p><button class="btn" id="go" type="button">Confirm</button></p>
+  <p class="src">Nothing is recorded until you press the button.</p></div>
 <div class="card" id="detail" hidden>
   <p><b>Thank you</b> — your listing will show this within the hour, stamped with today's date.</p>
   <p class="src">We ask again in about a month. Families filter for clinics that can actually take a new client, so an up-to-date answer means fewer wasted calls for your intake team — and no calls at all when you're full.</p>
@@ -878,32 +883,42 @@ function respondPage() {
 <script>
 (function(){
   ${TOKEN_GRAB}
-  var MSG={
+  var ASK={
+    "accepting":["Yes, we're accepting new clients","Your listing will show families that you have room."],
+    "full":["We're full right now","Your listing will show families that your waitlist is closed."],
+    "claim-confirm":["Confirm this is my email address","This continues the claim on your listing."],
+    "claim-approve":["Approve this claim","The clinic will be marked as claimed and emailed."],
+    "claim-reject":["Reject this claim","The claimant will be told politely; nothing on the listing changes."]
+  };
+  var DONE={
     "accepting":["Marked as accepting new clients","Families searching your city will see that you have room within the hour.",1],
     "full":["Marked as full","We will show your waitlist as closed, so families do not call for a slot you cannot fill.",1],
     "claim-confirm":["Email confirmed","Thanks. We do a final review of every claim, usually the same day, and will email you when your listing is yours.",0],
     "claim-approve":["Claim approved","Publishing now; the clinic has been emailed.",0],
     "claim-reject":["Claim rejected","The claimant has been told politely. Nothing on the listing changed.",0]
   };
+  var hd=document.getElementById("hd"),msg=document.getElementById("msg");
   function show(id){document.getElementById(id).hidden=false;}
-  function fail(){document.getElementById("hd").textContent="That link didn't work";document.getElementById("msg").textContent="";show("oops");}
-  if(!t){fail();return;}
-  fetch("/api/submit",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"respond",t:t})})
-    .then(function(r){return r.json();})
-    .then(function(r){
-      var m=r&&r.ok&&MSG[r.action]; if(!m){fail();return;}
-      document.getElementById("hd").textContent=m[0];
-      document.getElementById("msg").textContent=m[1];
-      if(m[2]) show("detail");
-    }).catch(fail);
+  function fail(){hd.textContent="That link didn't work";msg.textContent="";document.getElementById("ask").hidden=true;show("oops");}
+  var a="";try{a=JSON.parse(atob(t.split(".")[0].replace(/-/g,"+").replace(/_/g,"/"))).a||"";}catch(e){}
+  var q=ASK[a]; if(!t||!q){fail();return;}
+  hd.textContent=q[0]+"?"; msg.textContent=q[1]; show("ask");
+  var go=document.getElementById("go"); go.textContent="Confirm: "+q[0];
+  go.addEventListener("click",function(){
+    go.disabled=true; go.textContent="Saving…";
+    fetch("/api/submit",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:"respond",t:t})})
+      .then(function(r){return r.json();})
+      .then(function(r){
+        var m=r&&r.ok&&DONE[r.action]; if(!m){fail();return;}
+        document.getElementById("ask").hidden=true; hd.textContent=m[0]; msg.textContent=m[1];
+        if(m[2]) show("detail");
+      }).catch(fail);
+  });
 })();
 </script>`;
-  return layout(`Thanks — response recorded | ${cfg.siteName}`, body, { canonical: "/respond.html", noindex: true, noReferrer: true });
+  return layout(`Confirm your answer | ${cfg.siteName}`, body, { canonical: "/respond.html", noindex: true, noReferrer: true });
 }
 
-// Pages opened from an emailed one-click link carry a signed token in ?t=. Read it once, then
-// strip it from the URL before the (deferred) analytics script runs, so it never reaches
-// analytics, history, or a Referer header. The page itself also sends no-referrer.
 const TOKEN_GRAB = `var t=new URLSearchParams(location.search).get("t")||"";if(t&&history.replaceState)history.replaceState(null,"",location.pathname);`;
 
 // Clinic insurance form, reached only from the "Update our insurance plans" email button.
