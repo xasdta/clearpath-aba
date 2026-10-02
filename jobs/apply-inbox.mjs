@@ -27,7 +27,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { openDb, today, nowIso } from "../lib/db.mjs";
-import { sendMail, suppress } from "../lib/mail.mjs";
+import { sendMail, isSuppressed, suppress } from "../lib/mail.mjs";
 import { mintToken, verifyToken } from "../lib/tokens.mjs";
 import { PAYER_KEYS } from "../api/_payers.mjs";
 
@@ -59,7 +59,13 @@ const licDigits = (s) => String(s || "").replace(/\D/g, "").replace(/^0+/, "");
 const org = (npi) => db.prepare(`
   SELECT o.*, s.city, s.city_slug, s.phone FROM organizations o JOIN sites s ON s.site_key = o.npi
   WHERE o.npi = ? AND o.active = 1 AND s.active = 1`).get(String(npi || "").replace(/\D/g, ""));
-const contactFor = (npi) => db.prepare(`SELECT email FROM ops.clinic_contacts WHERE site_key = ?`).get(npi)?.email;
+// Where a family's inquiry goes: the address the clinic gave us, else the intake address it
+// publishes on its own website (found by research for outreach), unless it opted out or bounced.
+const contactFor = (npi) => {
+  const c = db.prepare(`SELECT email FROM ops.clinic_contacts WHERE site_key = ?`).get(npi)?.email
+    || db.prepare(`SELECT email FROM ops.outreach WHERE npi = ? AND status NOT IN ('unsubscribed','failed')`).get(npi)?.email;
+  return c && !isSuppressed(db, c) ? c : null;
+};
 const mail = (m) => sendMail(db, m);
 
 // ---------- GitHub inbox ----------
@@ -275,41 +281,50 @@ If you didn't request this, ignore this email and nothing will change.
   return { outcome: `claim ${id} awaiting email confirmation` };
 };
 
-H.inquiry = async (d) => {
-  const o = org(d.npi);
-  if (!o) return { outcome: "unknown clinic" };
-  db.prepare(`INSERT INTO ops.leads (site_key, payer, child_age, name, contact, message, source_page, created_at)
-              VALUES (?,?,?,?,?,?,'provider',?)`)
-    .run(o.npi, d.insurance ?? null, d.child_age ?? null, d.name, d.contact, d.message ?? null, nowIso());
-  const clinicEmail = contactFor(o.npi);
-  const summary = `Name:       ${d.name}
+// A family's inquiry. The form promises "We pass your message to the provider", so it goes to
+// the clinic whenever we hold an address for it. If we don't yet, the family is told so plainly,
+// with the clinic's phone; the clinic jumps the research queue (factory/engine/research.mjs reads
+// waiting leads) and forwardWaiting() sends the message once an address turns up, within 7 days.
+// The owner sees all of it in the evening summary, not one email per inquiry.
+const summaryOf = (d) => `Name:       ${d.name}
 Contact:    ${d.contact}
 Insurance:  ${d.insurance ?? "(not given)"}
 Child's age: ${d.child_age ?? "(not given)"}
 ${d.message ? `\nMessage:\n${d.message}\n` : ""}`;
-
-  if (clinicEmail) {
-    await mail({
-      to: clinicEmail, tag: "inquiry-forward", dedupeKey: `inquiry:${o.npi}:${d.contact}:${today()}`,
-      replyTo: isEmail(d.contact) ? d.contact : undefined,
-      subject: `New family inquiry via ${cfg.siteName}`,
-      text: `A family asked about availability at ${o.name}:\n\n${summary}\nPlease reply to them directly${isEmail(d.contact) ? " (replying to this email reaches them)" : ""}. We don't charge per inquiry and never will.\n\n— ${cfg.siteName}`,
-    });
-  } else {
-    await mail({
-      to: OWNER, tag: "inquiry-owner", dedupeKey: `inquiry-owner:${o.npi}:${d.contact}:${today()}`,
-      replyTo: isEmail(d.contact) ? d.contact : undefined,
-      subject: `Inquiry to pass on: ${o.name} (no clinic email on file)`,
-      text: `A family asked about ${o.name} (${o.city}). We hold no email for this clinic yet, so it came to you.\nClinic phone on public record: ${o.phone ?? "(none)"}\n\n${summary}`,
-    });
-  }
+async function forwardInquiry(o, d, to, late) {
+  await mail({
+    to, tag: "inquiry-forward", dedupeKey: `inquiry:${o.npi}:${d.contact}:${late ? "late" : today()}`,
+    replyTo: isEmail(d.contact) ? d.contact : undefined,
+    subject: `New family inquiry via ${cfg.siteName}`,
+    text: `A family asked about availability at ${o.name}${late ? ` (they wrote on ${late}; we've only now found your clinic's email address)` : ""}:\n\n${summaryOf(d)}\nPlease reply to them directly${isEmail(d.contact) ? " (replying to this email reaches them)" : ""}. We don't charge per inquiry and never will.\n\nYour listing: ${SITE}/providers/${o.npi}.html\n\n— ${cfg.siteName}`,
+  });
+}
+H.inquiry = async (d) => {
+  const o = org(d.npi);
+  if (!o) return { outcome: "unknown clinic" };
+  const clinicEmail = contactFor(o.npi);
+  db.prepare(`INSERT INTO ops.leads (site_key, payer, child_age, name, contact, message, source_page, created_at, status, forwarded_to, forwarded_at)
+              VALUES (?,?,?,?,?,?,'provider',?,?,?,?)`)
+    .run(o.npi, d.insurance ?? null, d.child_age ?? null, d.name, d.contact, d.message ?? null, nowIso(),
+      clinicEmail ? "forwarded" : "waiting", clinicEmail ?? null, clinicEmail ? nowIso() : null);
+  if (clinicEmail) await forwardInquiry(o, d, clinicEmail);
   if (isEmail(d.contact)) {
     await mail({
       to: d.contact, tag: "inquiry-ack", dedupeKey: `inquiry-ack:${o.npi}:${d.contact}:${today()}`,
-      subject: `We passed your message to ${o.name}`,
-      text: `Hi ${d.name},
+      subject: clinicEmail ? `We passed your message to ${o.name}` : `About your message to ${o.name}`,
+      text: clinicEmail ? `Hi ${d.name},
 
 Your inquiry is on its way to ${o.name}.${o.phone ? ` Clinics can be slow to answer email — if you don't hear back in a couple of days, call them at ${o.phone}.` : ""}
+
+Their listing: ${SITE}/providers/${o.npi}.html
+
+We never sell family contact information and never share it with any other clinic.
+
+— ${cfg.siteName}` : `Hi ${d.name},
+
+Thanks for your message about ${o.name}. We don't have an email address for this clinic yet, so we couldn't send it straight away. We're looking for one now and will pass your message on as soon as we find it (usually within a few days).
+
+The fastest way to reach them is by phone${o.phone ? `: ${o.phone}` : " — their number is on their listing"}.
 
 Their listing: ${SITE}/providers/${o.npi}.html
 
@@ -318,8 +333,26 @@ We never sell family contact information and never share it with any other clini
 — ${cfg.siteName}`,
     });
   }
-  return { outcome: `inquiry for ${o.name} → ${clinicEmail ? "clinic" : "owner"}` };
+  return { outcome: `inquiry for ${o.name} → ${clinicEmail ? "forwarded to clinic" : "waiting for a clinic email (family given the phone)"}` };
 };
+
+// Inquiries waiting for a clinic address: forward once research finds one; give up after 7 days.
+async function forwardWaiting() {
+  const out = [];
+  for (const l of db.prepare(`SELECT * FROM ops.leads WHERE status='waiting'`).all()) {
+    if (Date.now() - Date.parse(l.created_at) > 7 * 864e5) { db.prepare(`UPDATE ops.leads SET status='expired' WHERE id=?`).run(l.id); out.push(`inquiry ${l.id}: no clinic email within 7 days, stopped`); continue; }
+    const to = contactFor(l.site_key), o = org(l.site_key);
+    if (!to || !o) continue;
+    const d = { name: l.name, contact: l.contact, insurance: l.payer, child_age: l.child_age, message: l.message };
+    await forwardInquiry(o, d, to, l.created_at.slice(0, 10));
+    db.prepare(`UPDATE ops.leads SET status='forwarded', forwarded_to=?, forwarded_at=? WHERE id=?`).run(to, nowIso(), l.id);
+    if (isEmail(l.contact)) await mail({ to: l.contact, tag: "inquiry-ack", dedupeKey: `inquiry-late:${l.id}`,
+      subject: `We passed your message to ${o.name}`,
+      text: `Hi ${l.name},\n\nGood news: we found an email address for ${o.name} and have passed your message on. They can reply to you directly.${o.phone ? ` If you don't hear back in a couple of days, call them at ${o.phone}.` : ""}\n\n— ${cfg.siteName}` });
+    out.push(`inquiry ${l.id}: forwarded to ${o.name} (address found)`);
+  }
+  return out;
+}
 
 H.alert = async (d) => {
   const email = d.email.toLowerCase();
@@ -501,6 +534,7 @@ for (const f of files) {
     }).catch(() => {});
   }
 }
+try { results.push(...await forwardWaiting()); } catch (e) { results.push(`forwardWaiting: ERROR ${e.message}`); }
 // APPLY_NO_PUBLISH=1 applies events without rebuilding or pushing (for testing).
 if (publishNeeded) results.push(`publish: ${process.env.APPLY_NO_PUBLISH ? "skipped (APPLY_NO_PUBLISH)" : publish()}`);
 console.log(`[${nowIso()}] apply-inbox: ${files.length} queued${results.length ? "\n  " + results.join("\n  ") : ""}`);
