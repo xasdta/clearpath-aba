@@ -1278,6 +1278,8 @@ w("sitemap.xml", `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${urls.map((u) => `<url><loc>${base}${u}</loc><lastmod>${today}</lastmod></url>`).join("\n")}
 </urlset>`);
+// IndexNow ownership key, shared with the directory network (factory/engine/indexnow.mjs).
+w("8638c5397484efc819f14077791423ee.txt", "8638c5397484efc819f14077791423ee");
 w("robots.txt", `User-agent: *\nAllow: /\n${base ? `Sitemap: ${base}/sitemap.xml\n` : ""}`);
 
 // docs/ IS the Vercel deploy root (Root Directory = docs), so this config lives here.
