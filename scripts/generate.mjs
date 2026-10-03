@@ -544,7 +544,7 @@ ${o.ao_license_status === "active" ? `
 : `
   <p>Authorized official on the federal NPI record: <b>${esc(o.ao_name ?? "not listed")}</b>${o.ao_credential ? ` (${esc(o.ao_credential)})` : ""}.</p>
   <p><b>We have not confirmed an active Texas license for this name.</b> That most often means a name variant, a married/maiden name, or a clinical director different from the administrative contact — not that anyone is unlicensed. We publish verification only when we can positively match it.</p>
-  <div class="src">You can check any name yourself in the <a href="../lookup.html">state license lookup</a>. Provider: <a href="../for-clinics.html">claim this profile</a> to get verified.</div>`}
+  <div class="src">You can check any name yourself in the <a href="../lookup.html">state license lookup</a>. Provider: <a href="../for-clinics.html?npi=${esc(o.npi)}#claim">claim this profile</a> to get verified.</div>`}
 </div>
 
 <h2 id="insurance">Insurance</h2>
@@ -589,7 +589,7 @@ ${claim ? `<div class="card claimed"><h2>From the provider</h2>
   ${claim.service_area ? `<p><b>Service area:</b> ${esc(claim.service_area)}</p>` : ""}
   ${claim.ages_served ? `<p><b>Ages served:</b> ${esc(claim.ages_served)}</p>` : ""}
   <div class="src">Claimed and identity-verified ${esc(claim.claimed_date)}. Claiming is free and does not affect ranking.</div></div>` : ""}
-<div class="card side-claim"><b>Is this your clinic?</b><p>Claim it free to keep your openings and insurance current and receive family inquiries.</p><a class="btn ghost" href="../for-clinics.html">Claim this profile</a></div>
+<div class="card side-claim"><b>Is this your clinic?</b><p>Claim it free to keep your openings and insurance current and receive family inquiries.</p><a class="btn ghost" href="../for-clinics.html?npi=${esc(o.npi)}#claim">Claim this profile</a></div>
 </aside>
 </div>
 <p class="src">Something wrong here? <a href="mailto:${esc(cfg.correctionsEmail)}?subject=Correction%20for%20NPI%20${esc(o.npi)}">Report a correction</a> — we re-verify with the clinic and update the date stamp.</p>`;
@@ -646,13 +646,27 @@ function forClinicsPage() {
 <li>Get license-verified: we match your director to the TDLR roster and date-stamp it.</li>
 <li>Receive family inquiries at no charge.</li></ul>
 <p><b>Claiming never affects your ranking.</b> We sort by confirmed availability and verified credentials — never by who pays.</p>
+<div id="claim"></div>
+<p class="src" id="claimfor" hidden></p>
 ${formOpen("claim")}
-  <div class="f2"><label>Clinic name<input name="clinic" required></label><label>Your name<input name="name" required></label></div>
-  <div class="f2"><label>Role<input name="role" placeholder="Owner / Clinical Director" required></label><label>Work email<input name="email" type="email" required></label></div>
-  <div class="f2"><label>NPI or city<input name="npi" placeholder="10-digit NPI"></label><label>TX license #<input name="license" placeholder="BHV-XXXX"></label></div>
+  <div class="f2"><label>Clinic name<input name="clinic" id="claimclinic" required></label><label>Your name<input name="name" required></label></div>
+  <div class="f2"><label>Role<input name="role" placeholder="Owner / Clinical Director" required></label><label>Work email (at your clinic's domain if you have one)<input name="email" type="email" required></label></div>
+  <div class="f2"><label>Clinic NPI (10 digits, optional)<input name="npi" id="claimnpi" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="Filled in from your listing"></label><label>Your TX licence # (optional)<input name="license" placeholder="BHV-1234"></label></div>
   <button>Claim our listing (free)</button>
-  <div class="src">We check your license against the TDLR roster automatically, confirm your email, and review every claim before anything on your listing changes.</div>
+  <div class="src">We match your claim to the public records (NPI, TDLR licence roster, your clinic's website domain), confirm your email, and only then change anything on your listing.</div>
 </form>
+<script>
+(function(){
+  var n=(new URLSearchParams(location.search).get("npi")||"").replace(/\D/g,"").slice(0,10);
+  if(n.length!==10)return;
+  var f=document.getElementById("claimnpi");f.value=n;f.readOnly=true;
+  fetch("search.json").then(function(r){return r.json();}).then(function(list){
+    var hit=(list||[]).find(function(x){return String(x[0]||x.npi||"")===n;});
+    var name=hit?(hit[1]||hit.name):"";
+    if(name){var c=document.getElementById("claimclinic");if(!c.value)c.value=name;var p=document.getElementById("claimfor");p.textContent="Claiming: "+name;p.hidden=false;}
+  }).catch(function(){});
+})();
+</script>
 </div>
 
 <div class="card" id="featured"><h2>Featured listing — founding rate</h2>

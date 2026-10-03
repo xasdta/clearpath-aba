@@ -106,6 +106,8 @@ H.respond = async ({ t }) => {
   if (v.action === "claim-confirm") {
     if (claim.status !== "awaiting_email") return { outcome: `claim ${claim.id} already ${claim.status}` };
     db.prepare(`UPDATE ops.claims SET status='awaiting_approval' WHERE id=?`).run(claim.id);
+    // Strong claims (see H.claim) need no owner click once the claimant has proved the address.
+    if (/^AUTO-APPROVE/m.test(claim.checks || "") && o) return approveClaim({ ...claim, status: "awaiting_approval" }, o);
     await mail({
       to: OWNER, tag: "claim-approval", dedupeKey: `claim-approval:${claim.id}`,
       subject: `Approve claim? ${o?.name ?? claim.clinic}`,
@@ -130,37 +132,7 @@ Listing: ${SITE}/providers/${claim.org_npi}.html`,
   if (v.action === "claim-approve") {
     if (claim.status !== "awaiting_approval") return { outcome: `claim ${claim.id} already ${claim.status}` };
     if (!o) return { outcome: "clinic no longer listed" };
-    const data = readJson(CLAIMS);
-    data.providers = data.providers.filter((c) => c.npi !== o.npi);
-    data.providers.push({ npi: o.npi, intake_email: claim.email, claimed_date: today() });
-    writeJson(CLAIMS, data);
-    db.prepare(`INSERT INTO ops.clinic_contacts (site_key, email, source, confirmed_at, created_at) VALUES (?,?,'claim',?,?)
-                ON CONFLICT(site_key) DO UPDATE SET email=excluded.email, source='claim', confirmed_at=excluded.confirmed_at`)
-      .run(o.npi, claim.email.toLowerCase(), nowIso(), nowIso());
-    db.prepare(`UPDATE ops.claims SET status='approved', decided_at=? WHERE id=?`).run(nowIso(), claim.id);
-    await mail({
-      to: claim.email, tag: "claim-approved", dedupeKey: `claim-approved:${claim.id}`,
-      subject: `${o.name} is now claimed on ${cfg.siteName}`,
-      text: `Hi ${claim.name},
-
-Your listing is verified as claimed and will show the "Claimed profile" badge within the hour:
-${SITE}/providers/${o.npi}.html
-
-The single most useful thing you can do now: tell families whether you can take new clients.
-
-  Yes, we're accepting:  ${link(o.npi, "accepting")}
-  No, we're full:        ${link(o.npi, "full")}
-
-And which insurance plans you take (families filter by plan too):
-
-  Update your plans:     ${link(o.npi, "insurance")}
-
-One click, no login. We'll ask again about once a month so your status never goes stale.
-
-— ${cfg.siteName}
-Questions or corrections: just reply to this email.`,
-    });
-    return { outcome: `claim ${claim.id} approved`, publish: true };
+    return approveClaim(claim, o);
   }
 
   if (v.action === "claim-reject") {
@@ -203,63 +175,140 @@ H.insurance = async ({ t, accepted }) => {
   return { outcome: `${o.name}: accepts ${plans.join(", ") || "none of the listed plans"}`, publish: true };
 };
 
+// Publish an approved claim: listing marked claimed, the claimant becomes the intake contact
+// (inquiries and the monthly availability ask go to them), and they're emailed the next steps.
+async function approveClaim(claim, o) {
+  const data = readJson(CLAIMS);
+  data.providers = data.providers.filter((c) => c.npi !== o.npi);
+  data.providers.push({ npi: o.npi, intake_email: claim.email, claimed_date: today() });
+  writeJson(CLAIMS, data);
+  db.prepare(`INSERT INTO ops.clinic_contacts (site_key, email, source, confirmed_at, created_at) VALUES (?,?,'claim',?,?)
+              ON CONFLICT(site_key) DO UPDATE SET email=excluded.email, source='claim', confirmed_at=excluded.confirmed_at`)
+    .run(o.npi, claim.email.toLowerCase(), nowIso(), nowIso());
+  db.prepare(`UPDATE ops.claims SET status='approved', decided_at=? WHERE id=?`).run(nowIso(), claim.id);
+  await mail({
+    to: claim.email, tag: "claim-approved", dedupeKey: `claim-approved:${claim.id}`,
+    subject: `${o.name} is now claimed on ${cfg.siteName}`,
+    text: `Hi ${claim.name},
+
+Your listing is verified as claimed and will show the "Claimed profile" badge within the hour:
+${SITE}/providers/${o.npi}.html
+
+The single most useful thing you can do now: tell families whether you can take new clients.
+
+  Yes, we're accepting:  ${link(o.npi, "accepting")}
+  No, we're full:        ${link(o.npi, "full")}
+
+And which insurance plans you take (families filter by plan too):
+
+  Update your plans:     ${link(o.npi, "insurance")}
+
+One click, no login. We'll ask again about once a month so your status never goes stale.
+
+— ${cfg.siteName}
+Questions or corrections: just reply to this email.`,
+  });
+  return { outcome: `claim ${claim.id} approved`, publish: true };
+}
+
+// Clinic names as people type them vs the NPI record: "A Gifted Journey (Behavioral, Consulting
+// and Advocacy Services)" vs "A GIFTED JOURNEY ( BEHAVIORAL, CONSULTING AND ADVOCACY)".
+const LEGAL = new Set(["LLC", "PLLC", "INC", "CORP", "CO", "LP", "LLP", "PA", "PC", "LTD", "THE", "AND", "OF", "SERVICES", "SERVICE"]);
+const clinicWords = (s) => [...new Set(String(s || "").toUpperCase().replace(/[^A-Z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length > 1 && !LEGAL.has(w)))];
+function nameScore(a, b) {
+  const x = clinicWords(a), y = new Set(clinicWords(b));
+  if (!x.length || !y.size) return 0;
+  const shared = x.filter((w) => y.has(w)).length;
+  return shared / Math.min(x.length, y.size);
+}
+const FREEMAIL = /@(gmail|yahoo|outlook|hotmail|aol|icloud|proton|live|msn|me|comcast|att|sbcglobal)\./i;
+
 H.claim = async (d) => {
-  const email = d.email.toLowerCase();
-  let o = org(d.npi);
+  const email = d.email.toLowerCase(), domain = email.split("@")[1];
+  const signals = [];
+  // 1. a real 10-digit NPI (the form carries it from the clinic's page)
+  const npiDigits = String(d.npi || "").replace(/\D/g, "");
+  let o = npiDigits.length === 10 ? org(npiDigits) : null;
   let how = o ? "NPI" : null;
-  if (!o && d.clinic) {
-    const hits = db.prepare(`
-      SELECT o.npi FROM organizations o WHERE o.active = 1
-        AND (upper(o.name) = upper(?) OR upper(o.alt_name) = upper(?))`).all(d.clinic, d.clinic);
-    if (hits.length === 1) { o = org(hits[0].npi); how = "exact clinic name"; }
-  }
+  // 2. the claimant's email domain matches the address the clinic publishes on its own website
+  const byDomain = FREEMAIL.test(email) ? [] : [...new Set(db.prepare(`
+      SELECT npi k FROM ops.outreach WHERE lower(email) LIKE ? UNION SELECT site_key k FROM ops.clinic_contacts WHERE lower(email) LIKE ?`)
+    .all(`%@${domain}`, `%@${domain}`).map((r) => r.k))];
+  if (!o && byDomain.length === 1) { o = org(byDomain[0]); how = "email domain (the clinic's own published address)"; }
+  // 3. the licence given is the director's licence on a clinic's NPI record
   const lic = d.license ? db.prepare(`
     SELECT * FROM clinicians WHERE ltrim(substr(license_no, instr(license_no, '-') + 1), '0') = ?
     ORDER BY status = 'active' DESC LIMIT 1`).get(licDigits(d.license)) : null;
+  if (!o && lic) {
+    const hits = db.prepare(`SELECT npi, ao_license_no FROM organizations WHERE active = 1 AND ao_license_no IS NOT NULL`).all().filter((x) => licDigits(x.ao_license_no) === licDigits(lic.license_no));
+    if (hits.length === 1) { o = org(hits[0].npi); how = "director's licence"; }
+  }
+  // 4. a close clinic-name match, narrowed by the claimant being the official on the NPI record
+  let near = [];
+  if (d.clinic) {
+    near = db.prepare(`SELECT npi, name, ao_name FROM organizations WHERE active = 1`).all()
+      .map((x) => ({ ...x, score: nameScore(d.clinic, x.name) })).filter((x) => x.score >= 0.75).sort((x, y) => y.score - x.score);
+    if (!o) {
+      const strong = near.filter((x) => x.score === 1);
+      const pick = strong.length === 1 ? strong[0] : near.filter((x) => sameName(x.ao_name, d.name)).length === 1 ? near.find((x) => sameName(x.ao_name, d.name)) : null;
+      if (pick) { o = org(pick.npi); how = "clinic name"; }
+    }
+  }
+  const domainMatch = !!o && byDomain.includes(o.npi);
+  const aoMatch = !!o && sameName(o.ao_name, d.name) && o.ao_license_status === "active";
+  const licMatch = lic?.status === "active" && sameName(lic.name, d.name);
 
   const checks = [
-    o ? `✅ Listing found by ${how}: ${o.name} (NPI ${o.npi}, ${o.city})` : `✗ No listing matched NPI "${d.npi ?? ""}" or name "${d.clinic}"`,
-    !d.license ? "✗ No licence number given"
+    o ? `✅ Listing found by ${how}: ${o.name} (NPI ${o.npi}, ${o.city})` : `✗ No listing matched "${d.clinic}"${d.npi ? ` / "${d.npi}"` : ""}`,
+    !d.license ? (aoMatch ? null : "ℹ No licence number given")
       : !lic ? `✗ Licence ${d.license} not found in the TDLR roster`
       : `${lic.status === "active" ? "✅" : "✗"} Licence ${lic.license_no} is ${lic.status} (${lic.name})`,
     lic ? (sameName(lic.name, d.name) ? "✅ Licence holder's name matches the claimant" : `⚠ Licence holder ${lic.name} ≠ claimant ${d.name}`) : null,
-    lic && o ? (licDigits(o.ao_license_no) === licDigits(lic.license_no)
+    aoMatch ? `✅ Claimant is the official on the clinic's NPI record (${o.ao_name}), licence ${o.ao_license_no} active` : null,
+    lic && o && !aoMatch ? (licDigits(o.ao_license_no) === licDigits(lic.license_no)
       ? "✅ Licence is the one on record for this clinic's director"
-      : `⚠ Licence is not the clinic director's on record (${o.ao_name || "none on record"}${o.ao_license_no ? ", " + o.ao_license_no : ""})`) : null,
-    /@(gmail|yahoo|outlook|hotmail|aol|icloud|proton)\./i.test(email) ? "⚠ Personal email address, not a clinic domain" : `ℹ Email domain: ${email.split("@")[1]}`,
-  ].filter(Boolean).join("\n");
+      : `ℹ Licence is not the clinic director's on record (${o.ao_name || "none on record"}${o.ao_license_no ? ", " + o.ao_license_no : ""})`) : null,
+    FREEMAIL.test(email) ? "⚠ Personal email address, not a clinic domain"
+      : domainMatch ? `✅ Email domain ${domain} matches the clinic's own published address` : `ℹ Email domain: ${domain}`,
+  ];
+  // Verified enough to send the confirm link: a listing plus one personal credential or the clinic's own domain.
+  const ok = !!o && (licMatch || aoMatch || domainMatch);
+  // Strong enough to approve without the owner once the email is confirmed: the clinic's domain AND a credential.
+  if (ok && domainMatch && (licMatch || aoMatch)) checks.unshift("AUTO-APPROVE: clinic domain and credential both match; approved when the email is confirmed");
+  const checkText = checks.filter(Boolean).join("\n");
 
   const dup = o && db.prepare(`SELECT id FROM ops.claims WHERE org_npi=? AND lower(email)=? AND created_at > datetime('now','-1 day')`).get(o.npi, email);
   if (dup) return { outcome: `duplicate of claim ${dup.id}` };
 
-  const ok = o && lic?.status === "active";
   const id = db.prepare(`INSERT INTO ops.claims (org_npi, clinic, name, role, email, license_no, status, checks, created_at)
                          VALUES (?,?,?,?,?,?,?,?,?)`)
-    .run(o?.npi ?? "", d.clinic, d.name, d.role ?? null, email, d.license ?? null, ok ? "awaiting_email" : "unmatched", checks, nowIso())
+    .run(o?.npi ?? "", d.clinic, d.name, d.role ?? null, email, d.license ?? null, ok ? "awaiting_email" : "unmatched", checkText, nowIso())
     .lastInsertRowid;
 
   if (!ok) {
+    // No "reply to us": offer the closest listings, each with a link that claims that exact one.
+    const options = (near.length ? near.slice(0, 3).map((x) => org(x.npi)).filter(Boolean) : []);
     await mail({
       to: email, tag: "claim-unmatched", dedupeKey: `claim-unmatched:${id}`,
-      subject: `We need one more detail to verify ${d.clinic}`,
+      subject: `One more step to claim ${d.clinic}`,
       text: `Hi ${d.name},
 
 Thanks for claiming ${d.clinic}. We verify every claim against public records before anything
-changes, and we couldn't make an automatic match:
+changes, and we couldn't match this one automatically.
+${options.length ? `
+Is your clinic one of these? Open its link and send the short form again; it fills in the clinic for you:
 
-${checks}
-
-Reply to this email with your clinic's 10-digit NPI (it's in your listing's web address) and the
-Texas behavior-analyst licence number (BHV-…) of your clinical director, and we'll take it from there.
+${options.map((x) => `  ${x.name} (${x.city})\n  ${SITE}/for-clinics.html?npi=${x.npi}#claim`).join("\n\n")}
+` : `
+Find your clinic on ${SITE}, open its page and click "Claim this profile"; the form then knows exactly
+which listing is yours.
+`}
+It also helps to add your Texas behavior-analyst licence number (it starts with BHV-, from the TDLR
+licence lookup), or to use your email address at the clinic's own domain.
 
 — ${cfg.siteName}`,
     });
-    await mail({
-      to: OWNER, tag: "claim-unmatched", dedupeKey: `claim-unmatched-owner:${id}`,
-      subject: `FYI claim couldn't auto-verify: ${d.clinic}`,
-      text: `${d.name} <${email}> tried to claim "${d.clinic}". They've been asked by email for the missing details; nothing for you to do unless they reply.\n\n${checks}`,
-    });
-    return { outcome: `claim ${id} unmatched` };
+    return { outcome: `claim ${id} unmatched (sent ${options.length} suggestions)` };
   }
 
   await mail({
@@ -271,8 +320,7 @@ Please confirm this is your email address to continue claiming ${o.name}:
 
   ${link(id, "claim-confirm", 7)}
 
-Your licence checked out against the Texas roster. Once you confirm, we do a final review
-(usually the same day) and email you when the listing is yours.
+${/^AUTO-APPROVE/m.test(checkText) ? "Your details matched the public records, so the listing becomes yours as soon as you confirm." : "Your details matched the public records. Once you confirm, we do a final review (usually the same day)\nand email you when the listing is yours."}
 
 If you didn't request this, ignore this email and nothing will change.
 
