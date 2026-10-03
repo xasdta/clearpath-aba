@@ -26,8 +26,8 @@ import { clinicOutreach } from "../lib/outreach-email.mjs";
 
 const cfg = JSON.parse(readFileSync(new URL("../site.config.json", import.meta.url)));
 const FOLLOW_UP_DAYS = 5;
-const START_CAP = Number(process.env.OUTREACH_DAILY_CAP || 20);   // grows by +5/day of clean sending, max 60
-const MAX_CAP = 60;
+const START_CAP = Number(process.env.OUTREACH_DAILY_CAP || 20);   // grows by +5/day of clean sending, max 40
+const MAX_CAP = 40;   // one Workspace mailbox carries ABA (≤40), ADU (10) and the directory network (≤50)
 const db = openDb();
 const [cmd = "status", arg] = process.argv.slice(2);
 
