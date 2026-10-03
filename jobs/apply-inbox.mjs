@@ -222,7 +222,7 @@ function nameScore(a, b) {
   const shared = x.filter((w) => y.has(w)).length;
   return shared / Math.min(x.length, y.size);
 }
-const FREEMAIL = /@(gmail|yahoo|outlook|hotmail|aol|icloud|proton|live|msn|me|comcast|att|sbcglobal)\./i;
+const FREEMAIL = /@(gmail|googlemail|yahoo|ymail|rocketmail|outlook|hotmail|aol|icloud|me|mac|proton|protonmail|pm|live|msn|comcast|att|sbcglobal|bellsouth|verizon|cox|charter|spectrum|earthlink|frontier|windstream|optonline|mail|gmx|zoho|yandex|hey|fastmail|tutanota)\./i;
 
 H.claim = async (d) => {
   const email = d.email.toLowerCase(), domain = email.split("@")[1];
@@ -232,9 +232,11 @@ H.claim = async (d) => {
   let o = npiDigits.length === 10 ? org(npiDigits) : null;
   let how = o ? "NPI" : null;
   // 2. the claimant's email domain matches the address the clinic publishes on its own website
+  // Exact domain comparison (not LIKE: "_" and "%" in a typed address are wildcards there).
   const byDomain = FREEMAIL.test(email) ? [] : [...new Set(db.prepare(`
-      SELECT npi k FROM ops.outreach WHERE lower(email) LIKE ? UNION SELECT site_key k FROM ops.clinic_contacts WHERE lower(email) LIKE ?`)
-    .all(`%@${domain}`, `%@${domain}`).map((r) => r.k))];
+      SELECT npi k FROM ops.outreach WHERE lower(substr(email, instr(email, '@') + 1)) = ?
+      UNION SELECT site_key k FROM ops.clinic_contacts WHERE lower(substr(email, instr(email, '@') + 1)) = ?`)
+    .all(domain, domain).map((r) => r.k))];
   if (!o && byDomain.length === 1) { o = org(byDomain[0]); how = "email domain (the clinic's own published address)"; }
   // 3. the licence given is the director's licence on a clinic's NPI record
   const lic = d.license ? db.prepare(`
@@ -256,6 +258,9 @@ H.claim = async (d) => {
     }
   }
   const domainMatch = !!o && byDomain.includes(o.npi);
+  // Skipping the owner's click needs a domain only this clinic uses: a domain several clinics share
+  // (a chain, or an ISP/mail provider the list above misses) doesn't prove which clinic you run.
+  const domainOnlyThis = domainMatch && byDomain.length === 1;
   const aoMatch = !!o && sameName(o.ao_name, d.name) && o.ao_license_status === "active";
   const licMatch = lic?.status === "active" && sameName(lic.name, d.name);
 
@@ -275,7 +280,7 @@ H.claim = async (d) => {
   // Verified enough to send the confirm link: a listing plus one personal credential or the clinic's own domain.
   const ok = !!o && (licMatch || aoMatch || domainMatch);
   // Strong enough to approve without the owner once the email is confirmed: the clinic's domain AND a credential.
-  if (ok && domainMatch && (licMatch || aoMatch)) checks.unshift("AUTO-APPROVE: clinic domain and credential both match; approved when the email is confirmed");
+  if (ok && domainOnlyThis && (licMatch || aoMatch)) checks.unshift("AUTO-APPROVE: clinic domain and credential both match; approved when the email is confirmed");
   const checkText = checks.filter(Boolean).join("\n");
 
   const dup = o && db.prepare(`SELECT id FROM ops.claims WHERE org_npi=? AND lower(email)=? AND created_at > datetime('now','-1 day')`).get(o.npi, email);
