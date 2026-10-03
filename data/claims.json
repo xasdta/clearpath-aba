@@ -1,5 +1,5 @@
 {
-  "_schema": "Each entry: {npi (must match a provider page), website?, phone?, intake_email?, service_area?, ages_served?, claimed_date (YYYY-MM-DD)}. Add an entry ONLY after verifying the claimant: their TX license number matches the TDLR roster AND the email domain matches the clinic website (or a callback to the clinic's number on public record). Claiming is free; it does not affect ranking.",
+  "_schema": "Each entry: {npi (must match a provider page), display_name? (the clinic's trading name, shown instead of the NPI legal name), website?, phone?, intake_email?, service_area?, ages_served?, claimed_date (YYYY-MM-DD)}. Add an entry ONLY after verifying the claimant: their TX license number matches the TDLR roster AND the email domain matches the clinic website (or a callback to the clinic's number on public record). Claiming is free; it does not affect ranking.",
   "providers": [
     {
       "npi": "1962182543",
@@ -9,7 +9,8 @@
     {
       "npi": "1255751863",
       "intake_email": "kristi@aspireaustin.com",
-      "claimed_date": "2026-10-03"
+      "claimed_date": "2026-10-03",
+      "display_name": "ASPIRE"
     }
   ]
 }

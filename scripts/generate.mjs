@@ -52,6 +52,9 @@ const cities = db.prepare(`
 // NPPES stores names in capitals; show them the way the clinic writes them. legal_name keeps the
 // registry spelling for the provider page, and matching elsewhere is case-insensitive.
 for (const o of orgs) { o.legal_name = o.name; o.name = displayName(o.name); o.city = displayName(o.city); }
+// A claimed clinic may ask to be shown by its trading name ("ASPIRE" for Autism Spectrum
+// Instructional Resources); it lives in claims.json so the weekly NPI refresh never undoes it.
+for (const o of orgs) { const n = claimBy.get(o.npi)?.display_name; if (n) o.name = String(n).slice(0, 120); }
 for (const c of cities) c.city = displayName(c.city);
 const licenses = db.prepare(`SELECT name, license_no, license_type, status, expires FROM clinicians ORDER BY name`).all();
 const activeLicenses = licenses.filter((l) => l.status === "active");
