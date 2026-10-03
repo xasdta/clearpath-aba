@@ -22,6 +22,7 @@
 // Every event id is recorded in ops.inbox_applied before its file is deleted, so a crash at
 // any point re-runs safely. Any public change triggers generate → commit → push.
 
+import { displayName } from "../lib/names.mjs";
 import "../lib/env.mjs";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -96,7 +97,7 @@ H.respond = async ({ t }) => {
     if (!o) return { outcome: "unknown_clinic" };
     db.prepare(`INSERT INTO ops.availability (site_key, accepting, as_of, source, collected_by) VALUES (?,?,?,'email','clinic')`)
       .run(o.npi, v.action === "accepting" ? 1 : 0, today());
-    return { outcome: `${o.name}: ${v.action}`, publish: true };
+    return { outcome: `${displayName(o.name)}: ${v.action}`, publish: true };
   }
 
   const claim = db.prepare(`SELECT * FROM ops.claims WHERE id = ?`).get(Number(v.siteKey));
@@ -110,8 +111,8 @@ H.respond = async ({ t }) => {
     if (/^AUTO-APPROVE/m.test(claim.checks || "") && o) return approveClaim({ ...claim, status: "awaiting_approval" }, o);
     await mail({
       to: OWNER, tag: "claim-approval", dedupeKey: `claim-approval:${claim.id}`,
-      subject: `Approve claim? ${o?.name ?? claim.clinic}`,
-      text: `${claim.name} (${claim.role || "role not given"}) wants to claim ${o?.name ?? claim.clinic} and has confirmed ${claim.email}.
+      subject: `Approve claim? ${o ? displayName(o.name) : claim.clinic}`,
+      text: `${claim.name} (${claim.role || "role not given"}) wants to claim ${o ? displayName(o.name) : claim.clinic} and has confirmed ${claim.email}.
 
 Automatic checks:
 ${claim.checks}
@@ -140,10 +141,10 @@ Listing: ${SITE}/providers/${claim.org_npi}.html`,
     db.prepare(`UPDATE ops.claims SET status='rejected', decided_at=? WHERE id=?`).run(nowIso(), claim.id);
     await mail({
       to: claim.email, tag: "claim-rejected", dedupeKey: `claim-rejected:${claim.id}`,
-      subject: `About your claim for ${o?.name ?? claim.clinic}`,
+      subject: `About your claim for ${o ? displayName(o.name) : claim.clinic}`,
       text: `Hi ${claim.name},
 
-We weren't able to confirm that you represent ${o?.name ?? claim.clinic}, so the listing hasn't been
+We weren't able to confirm that you represent ${o ? displayName(o.name) : claim.clinic}, so the listing hasn't been
 changed. If this is a mistake, reply to this email from an address at the clinic and we'll take
 another look.
 
@@ -172,7 +173,7 @@ H.insurance = async ({ t, accepted }) => {
     for (const k of PAYER_KEYS) upsert.run(o.npi, k, plans.includes(k) ? "verified_yes" : "verified_no", today());
     db.exec("COMMIT");
   } catch (e) { db.exec("ROLLBACK"); throw e; }
-  return { outcome: `${o.name}: accepts ${plans.join(", ") || "none of the listed plans"}`, publish: true };
+  return { outcome: `${displayName(o.name)}: accepts ${plans.join(", ") || "none of the listed plans"}`, publish: true };
 };
 
 // Publish an approved claim: listing marked claimed, the claimant becomes the intake contact
@@ -188,7 +189,7 @@ async function approveClaim(claim, o) {
   db.prepare(`UPDATE ops.claims SET status='approved', decided_at=? WHERE id=?`).run(nowIso(), claim.id);
   await mail({
     to: claim.email, tag: "claim-approved", dedupeKey: `claim-approved:${claim.id}`,
-    subject: `${o.name} is now claimed on ${cfg.siteName}`,
+    subject: `${displayName(o.name)} is now claimed on ${cfg.siteName}`,
     text: `Hi ${claim.name},
 
 Your listing is verified as claimed and will show the "Claimed profile" badge within the hour:
@@ -259,7 +260,7 @@ H.claim = async (d) => {
   const licMatch = lic?.status === "active" && sameName(lic.name, d.name);
 
   const checks = [
-    o ? `✅ Listing found by ${how}: ${o.name} (NPI ${o.npi}, ${o.city})` : `✗ No listing matched "${d.clinic}"${d.npi ? ` / "${d.npi}"` : ""}`,
+    o ? `✅ Listing found by ${how}: ${displayName(o.name)} (NPI ${o.npi}, ${o.city})` : `✗ No listing matched "${d.clinic}"${d.npi ? ` / "${d.npi}"` : ""}`,
     !d.license ? (aoMatch ? null : "ℹ No licence number given")
       : !lic ? `✗ Licence ${d.license} not found in the TDLR roster`
       : `${lic.status === "active" ? "✅" : "✗"} Licence ${lic.license_no} is ${lic.status} (${lic.name})`,
@@ -313,10 +314,10 @@ licence lookup), or to use your email address at the clinic's own domain.
 
   await mail({
     to: email, tag: "claim-confirm", dedupeKey: `claim-confirm:${id}`,
-    subject: `Confirm your claim for ${o.name}`,
+    subject: `Confirm your claim for ${displayName(o.name)}`,
     text: `Hi ${d.name},
 
-Please confirm this is your email address to continue claiming ${o.name}:
+Please confirm this is your email address to continue claiming ${displayName(o.name)}:
 
   ${link(id, "claim-confirm", 7)}
 
@@ -344,7 +345,7 @@ async function forwardInquiry(o, d, to, late) {
     to, tag: "inquiry-forward", dedupeKey: `inquiry:${o.npi}:${d.contact}:${late ? "late" : today()}`,
     replyTo: isEmail(d.contact) ? d.contact : undefined,
     subject: `New family inquiry via ${cfg.siteName}`,
-    text: `A family asked about availability at ${o.name}${late ? ` (they wrote on ${late}; we've only now found your clinic's email address)` : ""}:\n\n${summaryOf(d)}\nPlease reply to them directly${isEmail(d.contact) ? " (replying to this email reaches them)" : ""}. We don't charge per inquiry and never will.\n\nYour listing: ${SITE}/providers/${o.npi}.html\n\n— ${cfg.siteName}`,
+    text: `A family asked about availability at ${displayName(o.name)}${late ? ` (they wrote on ${late}; we've only now found your clinic's email address)` : ""}:\n\n${summaryOf(d)}\nPlease reply to them directly${isEmail(d.contact) ? " (replying to this email reaches them)" : ""}. We don't charge per inquiry and never will.\n\nYour listing: ${SITE}/providers/${o.npi}.html\n\n— ${cfg.siteName}`,
   });
 }
 H.inquiry = async (d) => {
@@ -359,10 +360,10 @@ H.inquiry = async (d) => {
   if (isEmail(d.contact)) {
     await mail({
       to: d.contact, tag: "inquiry-ack", dedupeKey: `inquiry-ack:${o.npi}:${d.contact}:${today()}`,
-      subject: clinicEmail ? `We passed your message to ${o.name}` : `About your message to ${o.name}`,
+      subject: clinicEmail ? `We passed your message to ${displayName(o.name)}` : `About your message to ${displayName(o.name)}`,
       text: clinicEmail ? `Hi ${d.name},
 
-Your inquiry is on its way to ${o.name}.${o.phone ? ` Clinics can be slow to answer email — if you don't hear back in a couple of days, call them at ${o.phone}.` : ""}
+Your inquiry is on its way to ${displayName(o.name)}.${o.phone ? ` Clinics can be slow to answer email — if you don't hear back in a couple of days, call them at ${o.phone}.` : ""}
 
 Their listing: ${SITE}/providers/${o.npi}.html
 
@@ -370,7 +371,7 @@ We never sell family contact information and never share it with any other clini
 
 — ${cfg.siteName}` : `Hi ${d.name},
 
-Thanks for your message about ${o.name}. We don't have an email address for this clinic yet, so we couldn't send it straight away. We're looking for one now and will pass your message on as soon as we find it (usually within a few days).
+Thanks for your message about ${displayName(o.name)}. We don't have an email address for this clinic yet, so we couldn't send it straight away. We're looking for one now and will pass your message on as soon as we find it (usually within a few days).
 
 The fastest way to reach them is by phone${o.phone ? `: ${o.phone}` : " — their number is on their listing"}.
 
@@ -381,7 +382,7 @@ We never sell family contact information and never share it with any other clini
 — ${cfg.siteName}`,
     });
   }
-  return { outcome: `inquiry for ${o.name} → ${clinicEmail ? "forwarded to clinic" : "waiting for a clinic email (family given the phone)"}` };
+  return { outcome: `inquiry for ${displayName(o.name)} → ${clinicEmail ? "forwarded to clinic" : "waiting for a clinic email (family given the phone)"}` };
 };
 
 // Inquiries waiting for a clinic address: forward once research finds one; give up after 7 days.
@@ -395,9 +396,9 @@ async function forwardWaiting() {
     await forwardInquiry(o, d, to, l.created_at.slice(0, 10));
     db.prepare(`UPDATE ops.leads SET status='forwarded', forwarded_to=?, forwarded_at=? WHERE id=?`).run(to, nowIso(), l.id);
     if (isEmail(l.contact)) await mail({ to: l.contact, tag: "inquiry-ack", dedupeKey: `inquiry-late:${l.id}`,
-      subject: `We passed your message to ${o.name}`,
-      text: `Hi ${l.name},\n\nGood news: we found an email address for ${o.name} and have passed your message on. They can reply to you directly.${o.phone ? ` If you don't hear back in a couple of days, call them at ${o.phone}.` : ""}\n\n— ${cfg.siteName}` });
-    out.push(`inquiry ${l.id}: forwarded to ${o.name} (address found)`);
+      subject: `We passed your message to ${displayName(o.name)}`,
+      text: `Hi ${l.name},\n\nGood news: we found an email address for ${displayName(o.name)} and have passed your message on. They can reply to you directly.${o.phone ? ` If you don't hear back in a couple of days, call them at ${o.phone}.` : ""}\n\n— ${cfg.siteName}` });
+    out.push(`inquiry ${l.id}: forwarded to ${displayName(o.name)} (address found)`);
   }
   return out;
 }
@@ -519,12 +520,12 @@ If you think this is a mistake, reply to this email and we'll sort it out.
                                      VALUES (?,?,'featured',?,?)`).run(o.npi, d.email.toLowerCase(), nowIso(), nowIso());
   await mail({
     to: OWNER, tag: "featured-new", dedupeKey: `featured-new:${d.session}`,
-    subject: `✅ New featured clinic: ${o.name} (${o.city})`,
+    subject: `✅ New featured clinic: ${displayName(o.name)} (${o.city})`,
     text: `${head}\n\nLicence verified ✅, ${o.city} slot ${taken + 1} of ${cfg.featuredSlotsPerCity}. Published automatically — nothing to do.\n${SITE}/providers/${o.npi}.html`,
   });
   if (isEmail(d.email)) await mail({
     to: d.email, tag: "featured-live", dedupeKey: `featured-live:${d.session}`,
-    subject: `${o.name} is now featured on ${cfg.siteName}`,
+    subject: `${displayName(o.name)} is now featured on ${cfg.siteName}`,
     text: `Thanks — your license checked out and your featured card goes live on the ${o.city} page within the hour.
 
 Keep it working for you by telling families when you have room:
@@ -537,7 +538,7 @@ Cancel anytime from the receipt Stripe emailed you; the founding rate stays your
 
 — ${cfg.siteName}`,
   });
-  return { outcome: `featured ${o.name}`, publish: true };
+  return { outcome: `featured ${displayName(o.name)}`, publish: true };
 };
 
 // ---------- publish ----------
